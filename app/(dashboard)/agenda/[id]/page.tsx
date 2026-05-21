@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, Suspense } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useState, useEffect, Suspense, use } from "react"
+import { useRouter } from "next/navigation"
 import api from "@/lib/api"
 import { 
   Calendar as CalendarIcon, 
@@ -12,7 +12,8 @@ import {
   Loader2, 
   CheckCircle2,
   Search,
-  DollarSign, // 🚨 Importado ícone de dinheiro
+  Save,
+  DollarSign, // 🚨 Importado o ícone de dinheiro
   X 
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -28,14 +29,11 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 
-function SchedulingForm() {
+function EditSchedulingForm({ scheduleId }: { scheduleId: string }) {
   const router = useRouter()
-  const searchParams = useSearchParams()
-
-  const initialDate = searchParams.get("date") || new Date().toISOString().split('T')[0]
 
   // Estados do Formulário
-  const [date, setDate] = useState(initialDate)
+  const [date, setDate] = useState("")
   const [time, setTime] = useState("")
   
   // Estados de Serviços e Financeiro
@@ -60,49 +58,79 @@ function SchedulingForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
 
-  // Carrega os dados iniciais
   useEffect(() => {
-    async function loadFormData() {
+    async function loadAllData() {
       try {
-        const [clientsRes, usersRes, servicesRes] = await Promise.all([
+        const [clientsRes, usersRes, servicesRes, scheduleRes] = await Promise.all([
           api.get('/clients'),
           api.get('/users'),
-          api.get('/servicings')
+          api.get('/servicings'),
+          api.get(`/schedules/${scheduleId}`)
         ])
 
+        const schedule = scheduleRes.data
+
+        // Popula os catálogos
         setDbClients(clientsRes.data)
         setDbBarbers(usersRes.data)
         setDbServices(servicesRes.data)
+        
+        if (schedule.appointmentTime) {
+            const [datePart, timePart] = schedule.appointmentTime.split('T')
+            setDate(datePart) 
+            setTime(timePart.substring(0, 5)) 
+        }
+        
+        setSelectedClient(schedule.client)
+        setSelectedBarber(schedule.user) 
+        
+        // Popula serviços
+        if (schedule.servicings && schedule.servicings.length > 0) {
+            const loadedServiceIds = schedule.servicings.map((srv: any) => srv.id)
+            setSelectedServiceIds(loadedServiceIds)
+        }
+
+        // 🚨 Popula o Valor Financeiro (com fallback para agendamentos antigos sem o campo)
+        if (schedule.scheduleValue !== undefined && schedule.scheduleValue !== null) {
+            setScheduleValue(Number(schedule.scheduleValue).toFixed(2))
+        } else if (schedule.servicings) {
+            const fallbackSum = schedule.servicings.reduce((acc: number, srv: any) => acc + (srv.price || 0), 0)
+            setScheduleValue(fallbackSum.toFixed(2))
+        }
+
       } catch (error) {
-        console.error("Erro ao carregar dados:", error)
+        console.error("Erro ao carregar dados do agendamento:", error)
+        alert("Não foi possível carregar os dados deste agendamento.")
+        router.push('/agenda')
       } finally {
         setIsFetchingData(false)
       }
     }
     
-    loadFormData()
-  }, [])
+    loadAllData()
+  }, [scheduleId, router])
 
-  // 🚨 Efeito que recalcula a soma total automaticamente sempre que os serviços mudam
-  useEffect(() => {
-    const sum = selectedServiceIds.reduce((acc, id) => {
-      const srv = dbServices.find(s => s.id === id)
-      return acc + (srv ? srv.price : 0)
-    }, 0)
-    
-    setScheduleValue(sum.toFixed(2))
-  }, [selectedServiceIds, dbServices])
-
-  // Funções para Adicionar e Remover Serviços
+  // 🚨 Adição Inteligente: Soma ao valor atual preservando possíveis descontos
   const handleAddService = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = parseInt(e.target.value)
     if (!selectedServiceIds.includes(id)) {
       setSelectedServiceIds([...selectedServiceIds, id])
+      
+      const srv = dbServices.find(s => s.id === id)
+      if (srv) {
+        setScheduleValue(prev => (parseFloat(prev || "0") + srv.price).toFixed(2))
+      }
     }
   }
 
+  // 🚨 Remoção Inteligente: Subtrai do valor atual
   const handleRemoveService = (idToRemove: number) => {
     setSelectedServiceIds(selectedServiceIds.filter(id => id !== idToRemove))
+    
+    const srv = dbServices.find(s => s.id === idToRemove)
+    if (srv) {
+      setScheduleValue(prev => Math.max(0, parseFloat(prev || "0") - srv.price).toFixed(2))
+    }
   }
 
   const filteredClients = dbClients.filter(c => 
@@ -117,7 +145,7 @@ function SchedulingForm() {
     e.preventDefault()
     
     if (!selectedClient || !selectedBarber || selectedServiceIds.length === 0 || !time || !scheduleValue) {
-      alert("Por favor, preencha todos os campos obrigatórios (incluindo pelo menos um serviço e o valor).")
+      alert("Por favor, preencha todos os campos obrigatórios (incluindo ao menos um serviço e o valor).")
       return
     }
 
@@ -126,20 +154,20 @@ function SchedulingForm() {
     try {
       const payload = {
         clientId: selectedClient.id,
-        userId: selectedBarber.id,           
+        userId: selectedBarber.id,
         servicingIds: selectedServiceIds, 
         appointmentTime: `${date}T${time}:00`,
-        scheduleValue: parseFloat(scheduleValue) // 🚨 Injetamos o valor digitado/calculado
+        scheduleValue: parseFloat(scheduleValue) // 🚨 Enviando o valor final atualizado para o PUT
       }
 
-      await api.post('/schedules', payload)
+      await api.put(`/schedules/${scheduleId}`, payload)
       
       setIsSuccess(true)
       setTimeout(() => router.push('/agenda'), 2000)
 
     } catch (error) {
-      console.error("Erro ao agendar:", error)
-      alert("Erro ao salvar agendamento. Verifique se o horário está disponível.")
+      console.error("Erro ao atualizar:", error)
+      alert("Erro ao salvar alterações. Verifique os dados.")
     } finally {
       setIsLoading(false)
     }
@@ -149,11 +177,11 @@ function SchedulingForm() {
     return (
       <Card className="w-full max-w-md text-center p-8 mx-auto border-none shadow-2xl">
         <div className="flex justify-center mb-4">
-          <CheckCircle2 className="w-16 h-16 text-green-500 animate-bounce" />
+          <CheckCircle2 className="w-16 h-16 text-blue-500 animate-bounce" />
         </div>
-        <CardTitle className="text-2xl font-bold text-slate-900">Agendamento Confirmado!</CardTitle>
+        <CardTitle className="text-2xl font-bold text-slate-900">Alterações Salvas!</CardTitle>
         <CardDescription className="text-lg mt-2">
-          Horário reservado com sucesso para {selectedClient?.name}.
+          O agendamento de {selectedClient?.name} foi atualizado.
         </CardDescription>
       </Card>
     )
@@ -162,8 +190,8 @@ function SchedulingForm() {
   if (isFetchingData) {
     return (
       <Card className="shadow-lg border-none py-20 flex flex-col items-center justify-center text-slate-400">
-        <Loader2 className="w-10 h-10 animate-spin mb-4" />
-        <p className="font-medium animate-pulse">Sincronizando com o banco de dados...</p>
+        <Loader2 className="w-10 h-10 animate-spin mb-4 text-blue-600" />
+        <p className="font-medium animate-pulse">Recuperando informações do agendamento...</p>
       </Card>
     )
   }
@@ -171,9 +199,9 @@ function SchedulingForm() {
   return (
     <form onSubmit={handleSubmit}>
       <Card className="shadow-lg border-none">
-        <CardHeader className="bg-slate-900 text-white rounded-t-lg">
+        <CardHeader className="bg-blue-600 text-white rounded-t-lg">
           <CardTitle className="flex items-center gap-2">
-            <CalendarIcon className="w-5 h-5" /> Detalhes da Reserva
+            <CalendarIcon className="w-5 h-5" /> Editar Agendamento #{scheduleId}
           </CardTitle>
         </CardHeader>
         
@@ -181,14 +209,13 @@ function SchedulingForm() {
           
           {/* --- BLOCO 1: CLIENTE E PROFISSIONAL --- */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Campo Cliente */}
             <div className="space-y-2 relative">
-              <Label className="text-sm font-bold text-slate-700">Buscar Cliente</Label>
+              <Label className="text-sm font-bold text-slate-700">Cliente</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                 <Input 
                   placeholder="Nome do cliente..." 
-                  className="pl-10 h-12 focus-visible:ring-slate-900"
+                  className="pl-10 h-12 focus-visible:ring-blue-600"
                   value={selectedClient ? selectedClient.name : clientSearch}
                   onChange={(e) => {
                     setClientSearch(e.target.value)
@@ -219,14 +246,13 @@ function SchedulingForm() {
               )}
             </div>
 
-            {/* Campo Barbeiro */}
             <div className="space-y-2 relative">
-              <Label className="text-sm font-bold text-slate-700">Selecionar Profissional</Label>
+              <Label className="text-sm font-bold text-slate-700">Profissional</Label>
               <div className="relative">
                 <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                 <Input 
                   placeholder="Nome do profissional..." 
-                  className="pl-10 h-12 focus-visible:ring-slate-900"
+                  className="pl-10 h-12 focus-visible:ring-blue-600"
                   value={selectedBarber ? selectedBarber.name : barberSearch}
                   onChange={(e) => {
                     setBarberSearch(e.target.value)
@@ -266,7 +292,7 @@ function SchedulingForm() {
                 type="date" 
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="h-12 focus-visible:ring-slate-900"
+                className="h-12 focus-visible:ring-blue-600"
                 required
               />
             </div>
@@ -277,26 +303,24 @@ function SchedulingForm() {
                 type="time" 
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                className="h-12 focus-visible:ring-slate-900"
+                className="h-12 focus-visible:ring-blue-600"
                 required
               />
             </div>
           </div>
 
-          {/* 🚨 --- BLOCO 3: SESSÃO FINANCEIRA (Serviços e Valores) --- */}
+          {/* 🚨 --- BLOCO 3: SESSÃO FINANCEIRA --- */}
           <div className="pt-6 border-t border-slate-100">
             <h3 className="text-lg font-bold flex items-center gap-2 text-slate-800 mb-6">
-              <DollarSign className="w-5 h-5 text-green-600" />
+              <DollarSign className="w-5 h-5 text-blue-600" />
               Serviços e Financeiro
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               
-              {/* Coluna 1: Gestão de Serviços (Ocupa 2 espaços no grid) */}
               <div className="md:col-span-2 space-y-3">
                 <Label className="text-sm font-bold text-slate-700">Serviços Executados</Label>
 
-                {/* Lista de Selecionados */}
                 {selectedServiceIds.length > 0 && (
                   <div className="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-md border border-slate-100 min-h-[48px]">
                     {selectedServiceIds.map(id => {
@@ -307,13 +331,13 @@ function SchedulingForm() {
                         <Badge 
                           key={id} 
                           variant="secondary" 
-                          className="bg-slate-200 text-slate-800 hover:bg-slate-300 border-none flex items-center gap-2 py-1.5 px-3 text-sm"
+                          className="bg-blue-100 text-blue-700 hover:bg-blue-200 border-none flex items-center gap-2 py-1.5 px-3 text-sm"
                         >
                           {srv.name} - R$ {srv.price.toFixed(2)}
                           <button 
                             type="button" 
                             onClick={() => handleRemoveService(id)} 
-                            className="hover:bg-slate-400 rounded-full p-0.5 transition-colors"
+                            className="hover:bg-blue-300 rounded-full p-0.5 transition-colors"
                           >
                             <X className="w-3 h-3" />
                           </button>
@@ -323,15 +347,14 @@ function SchedulingForm() {
                   </div>
                 )}
 
-                {/* Dropdown de Adição */}
                 <div className="relative">
                   <Scissors className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <select 
-                    className="flex h-12 w-full items-center rounded-md border border-slate-200 bg-white pl-10 pr-3 py-2 text-sm focus:ring-2 focus:ring-slate-900 focus:outline-none"
+                    className="flex h-12 w-full items-center rounded-md border border-slate-200 bg-white pl-10 pr-3 py-2 text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"
                     onChange={handleAddService}
                     value="" 
                   >
-                    <option value="" disabled>+ Adicionar serviço...</option>
+                    <option value="" disabled>+ Adicionar outro serviço...</option>
                     {dbServices
                       .filter(srv => !selectedServiceIds.includes(srv.id))
                       .map(srv => (
@@ -341,7 +364,6 @@ function SchedulingForm() {
                 </div>
               </div>
 
-              {/* Coluna 2: Fechamento de Caixa (Input Editável) */}
               <div className="space-y-3">
                 <Label className="text-sm font-bold text-slate-700">Valor Cobrado (R$)</Label>
                 <div className="relative">
@@ -352,12 +374,12 @@ function SchedulingForm() {
                     min="0"
                     value={scheduleValue}
                     onChange={(e) => setScheduleValue(e.target.value)}
-                    className="pl-12 h-12 text-lg font-black text-green-700 bg-green-50 border-green-200 focus-visible:ring-green-600"
+                    className="pl-12 h-12 text-lg font-black text-blue-700 bg-blue-50 border-blue-200 focus-visible:ring-blue-600"
                     required
                   />
                 </div>
                 <p className="text-xs text-slate-500 font-medium">
-                  Você pode editar este valor para aplicar descontos ou acréscimos.
+                  Modifique este valor se houver alguma negociação especial neste atendimento.
                 </p>
               </div>
 
@@ -368,10 +390,10 @@ function SchedulingForm() {
 
         <CardFooter className="bg-slate-50 rounded-b-lg border-t p-6 flex justify-end gap-4">
           <Button type="button" variant="ghost" onClick={() => router.back()} disabled={isLoading}>
-            Cancelar
+            Descartar
           </Button>
-          <Button type="submit" className="bg-slate-900 hover:bg-slate-800 px-8 h-12 font-bold" disabled={isLoading}>
-            {isLoading ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Salvando...</> : "Confirmar Reserva"}
+          <Button type="submit" className="bg-blue-600 hover:bg-blue-700 px-8 h-12 font-bold text-white" disabled={isLoading}>
+            {isLoading ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Salvando...</> : <><Save className="mr-2 h-5 w-5" /> Salvar Alterações</>}
           </Button>
         </CardFooter>
       </Card>
@@ -379,7 +401,8 @@ function SchedulingForm() {
   )
 }
 
-export default function NewSchedulingPage() {
+export default function EditSchedulingPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
   const router = useRouter()
 
   return (
@@ -389,13 +412,13 @@ export default function NewSchedulingPage() {
           <ArrowLeft className="w-5 h-5" />
         </Button>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Novo Agendamento</h1>
-          <p className="text-slate-500">Configure os detalhes do novo horário</p>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Editar Agendamento</h1>
+          <p className="text-slate-500">Modifique as informações do horário reservado</p>
         </div>
       </div>
 
       <Suspense fallback={<div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400" /></div>}>
-        <SchedulingForm />
+        <EditSchedulingForm scheduleId={id} />
       </Suspense>
     </div>
   )

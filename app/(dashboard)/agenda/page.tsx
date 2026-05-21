@@ -8,7 +8,19 @@ import { Calendar } from "@/components/ui/calendar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Clock, Plus, Loader2, CalendarIcon, Scissors, User, UserCheck } from "lucide-react"
+import { 
+  Clock, 
+  Plus, 
+  Loader2, 
+  CalendarIcon, 
+  Scissors, 
+  User, 
+  UserCheck, 
+  CheckCircle2, 
+  XCircle, 
+  Check, 
+  ChevronDown
+} from "lucide-react"
 
 interface ScheduleMinDTO {
   id: number
@@ -16,17 +28,58 @@ interface ScheduleMinDTO {
   barberName: string
   serviceNames: string[]
   appointmentTime: any 
-  price: number
+  scheduleValue: number
+  scheduleStatus: string 
+}
+
+// 🚨 Dicionário de Status ajustado com cores exclusivas para o novo Dropdown (colorClass)
+const STATUS_CONFIG: Record<string, { label: string, badgeClass: string, iconClass: string, colorClass: string, Icon: any }> = {
+  CANCELLED: { 
+    label: 'Cancelado', 
+    badgeClass: 'bg-red-50 text-red-700 border-red-200', 
+    iconClass: 'bg-red-500 text-white hover:bg-red-400',
+    colorClass: 'text-red-500', 
+    Icon: XCircle 
+  },
+  PENDING: { 
+    label: 'Pendente', 
+    badgeClass: 'bg-yellow-50 text-yellow-700 border-yellow-200', 
+    iconClass: 'bg-slate-800 text-white hover:bg-slate-700',
+    colorClass: 'text-orange-500', 
+    Icon: Clock 
+  },
+  CONFIRMED: { 
+    label: 'Confirmado', 
+    badgeClass: 'bg-green-50 text-green-700 border-green-200', 
+    iconClass: 'bg-green-600 text-white hover:bg-green-500',
+    colorClass: 'text-green-500', 
+    Icon: Check 
+  },
+  COMPLETED: { 
+    label: 'Concluído', 
+    badgeClass: 'bg-blue-50 text-blue-700 border-blue-200', 
+    iconClass: 'bg-blue-600 text-white hover:bg-blue-500',
+    colorClass: 'text-blue-500', 
+    Icon: CheckCircle2 
+  },
 }
 
 export default function HomePage() {
   const [date, setDate] = useState<Date | undefined>(new Date())
   const [schedules, setSchedules] = useState<ScheduleMinDTO[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  
+  const [openDropdownId, setOpenDropdownId] = useState<number | null>(null)
 
   useEffect(() => {
     loadSchedules()
   }, [date])
+
+  useEffect(() => {
+    const handleClickOutside = () => setOpenDropdownId(null)
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [])
 
   const formatDateToUrl = (d?: Date) => {
     if (!d) return ""
@@ -40,21 +93,35 @@ export default function HomePage() {
     setIsLoading(true)
     try {
       const selectedDateStr = formatDateToUrl(date)
-      
-      // 🚨 Chamada direta ao método findByDate passando a data como parâmetro
-      // Ajuste o caminho '/daily' se o seu @RequestMapping for diferente
-      const response = await api.get('/schedules', {
-        params: { date: selectedDateStr }
-      })
-      
-      // Como o Back-end já traz filtrado, apenas setamos o estado
+      const response = await api.get('/schedules', { params: { date: selectedDateStr } })
       setSchedules(response.data)
-      
     } catch (error) {
       console.error("Erro ao carregar agenda:", error)
-      setSchedules([]) // Limpa a lista em caso de erro
+      setSchedules([]) 
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleChangeStatus = async (e: React.MouseEvent, appointment: ScheduleMinDTO, newStatus: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    setOpenDropdownId(null)
+
+    if (appointment.scheduleStatus === newStatus) return
+
+    if (newStatus === 'COMPLETED') {
+      const confirm = window.confirm(`Deseja finalizar o atendimento de ${appointment.clientName}?\nIsso irá gerar um lançamento financeiro no caixa.`)
+      if (!confirm) return
+    }
+
+    try {
+      await api.patch(`/schedules/${appointment.id}/status`, { status: newStatus })
+      loadSchedules() 
+    } catch (error) {
+      console.error("Erro ao atualizar status:", error)
+      alert("Não foi possível atualizar o status do agendamento.")
     }
   }
 
@@ -118,59 +185,104 @@ export default function HomePage() {
               <p className="font-medium animate-pulse">Sincronizando com o banco de dados...</p>
             </div>
           ) : schedules.length > 0 ? (
-            schedules.map((appointment, index) => (
-              <Card 
-                key={appointment.id || `schedule-${index}`} 
-                className="hover:border-slate-400 transition-all shadow-sm group border-l-4 border-l-slate-900"
-              >
-                <CardContent className="p-5 flex items-center justify-between">
-                  <div className="flex items-start gap-5">
-                    <div className="bg-slate-900 text-white p-3 rounded-xl shadow-inner group-hover:bg-blue-600 transition-colors mt-1">
-                      <Clock className="w-6 h-6" />
-                    </div>
-                    
-                    <div>
-                      <p className="text-xl font-black text-slate-900 mb-1">
-                        {formatTime(appointment.appointmentTime)}
-                      </p>
+            schedules.map((appointment, index) => {
+              
+              const currentStatus = STATUS_CONFIG[appointment.scheduleStatus] || STATUS_CONFIG['PENDING']
+              const CurrentIcon = currentStatus.Icon
+
+              return (
+                <Link 
+                  href={`/agenda/${appointment.id}`} 
+                  key={appointment.id || `schedule-${index}`}
+                  className="block"
+                >
+                  <Card className="hover:border-slate-400 transition-all shadow-sm group border-l-4 border-l-slate-900 cursor-pointer h-full overflow-visible">
+                    <CardContent className="p-5 flex items-center justify-between">
                       
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2 text-slate-700 font-bold">
-                          <User className="w-4 h-4 text-slate-400" />
-                          {appointment.clientName}
+                      <div className="flex items-start gap-5">
+                        
+                        <div className="relative mt-1">
+                          <button
+                            onClick={(e) => {
+                              // 🚨 O Segredo está aqui: stopImmediatePropagation mata o evento antes de chegar no document
+                              e.preventDefault()
+                              e.stopPropagation()
+                              e.nativeEvent.stopImmediatePropagation()
+                              
+                              setOpenDropdownId(openDropdownId === appointment.id ? null : appointment.id)
+                            }}
+                            title="Alterar Status"
+                            className={`p-3 rounded-xl shadow-inner transition-colors flex items-center gap-1 hover:scale-105 active:scale-95 ${currentStatus.iconClass}`}
+                          >
+                            <CurrentIcon className="w-6 h-6" />
+                            <ChevronDown className="w-3 h-3 opacity-70" />
+                          </button>
+
+                          {/* 🚨 Novo Visual do Menu Suspenso (Idêntico à referência) */}
+                          {openDropdownId === appointment.id && (
+                            <div className="absolute top-14 left-0 w-56 bg-white border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.12)] rounded-xl z-50 flex flex-col py-2 animate-in fade-in zoom-in-95 duration-100">
+                              {Object.entries(STATUS_CONFIG).map(([statusKey, config]) => (
+                                <button
+                                  key={statusKey}
+                                  onClick={(e) => handleChangeStatus(e, appointment, statusKey)}
+                                  className={`flex items-center gap-3 px-4 py-3 text-[15px] transition-colors w-full text-left
+                                    ${appointment.scheduleStatus === statusKey ? 'bg-slate-50 font-bold text-slate-900' : 'font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900'}
+                                  `}
+                                >
+                                  <config.Icon className={`w-5 h-5 ${config.colorClass}`} />
+                                  {config.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
-                          <UserCheck className="w-4 h-4 text-slate-400" />
-                          Profissional: {appointment.barberName}
+                        
+                        <div>
+                          <p className="text-xl font-black text-slate-900 mb-1">
+                            {formatTime(appointment.appointmentTime)}
+                          </p>
+                          
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2 text-slate-700 font-bold">
+                              <User className="w-4 h-4 text-slate-400" />
+                              {appointment.clientName}
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
+                              <UserCheck className="w-4 h-4 text-slate-400" />
+                              Profissional: {appointment.barberName}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            {appointment.serviceNames?.map((service, srvIndex) => (
+                              <Badge 
+                                key={`service-${appointment.id}-${srvIndex}`} 
+                                variant="secondary" 
+                                className="text-[10px] uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200"
+                              >
+                                <Scissors className="w-3 h-3 mr-1" />
+                                {service}
+                              </Badge>
+                            ))}
+                          </div>
                         </div>
+                      </div>
+                      
+                      <div className="text-right flex flex-col items-end gap-2">
+                        <p className={`text-xl font-bold ${appointment.scheduleStatus === 'COMPLETED' ? 'text-blue-600' : 'text-slate-600'}`}>
+                          R$ {(appointment.scheduleValue || 0).toFixed(2)}
+                        </p>
+                        
+                        <Badge className={currentStatus.badgeClass}>
+                          {currentStatus.label}
+                        </Badge>
                       </div>
 
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        {appointment.serviceNames?.map((service, srvIndex) => (
-                          <Badge 
-                            key={`service-${appointment.id}-${srvIndex}`} 
-                            variant="secondary" 
-                            className="text-[10px] uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200"
-                          >
-                            <Scissors className="w-3 h-3 mr-1" />
-                            {service}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="text-right flex flex-col items-end gap-2">
-                    <p className="text-xl font-bold text-green-600">
-                      R$ {appointment.price.toFixed(2)}
-                    </p>
-                    <Badge className="bg-green-50 text-green-700 border-green-200">
-                      Confirmado
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+                    </CardContent>
+                  </Card>
+                </Link>
+              )
+            })
           ) : (
             <Card className="border-dashed py-20">
               <CardContent className="flex flex-col items-center justify-center text-slate-400">
