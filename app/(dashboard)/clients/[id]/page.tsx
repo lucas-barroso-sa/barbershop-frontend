@@ -22,7 +22,8 @@ interface ScheduleMinDTO {
   barberName: string
   serviceNames: string[]
   appointmentTime: any
-  price: number
+  scheduleValue: number
+  scheduleStatus: string
 }
 
 export default function ClientDetailsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -213,7 +214,7 @@ export default function ClientDetailsPage({ params }: { params: Promise<{ id: st
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className="font-bold text-green-700">R$ {schedule.price.toFixed(2)}</p>
+                            <p className="font-bold text-green-700">R$ {schedule.scheduleValue.toFixed(2)}</p>
                             <span className="text-xs text-slate-400">Concluído</span>
                           </div>
                         </CardContent>
