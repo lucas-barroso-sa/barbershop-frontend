@@ -7,6 +7,7 @@ import api from "@/lib/api"
 import { Calendar } from "@/components/ui/calendar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { 
   Clock, 
@@ -19,9 +20,13 @@ import {
   CheckCircle2, 
   XCircle, 
   Check, 
-  ChevronDown
+  ChevronDown,
+  X,
+  CreditCard,
+  DollarSign
 } from "lucide-react"
 
+// Interfaces
 interface ScheduleMinDTO {
   id: number
   clientName: string
@@ -32,7 +37,14 @@ interface ScheduleMinDTO {
   scheduleStatus: string 
 }
 
-// 🚨 Dicionário de Status ajustado com cores exclusivas para o novo Dropdown (colorClass)
+interface PaymentMethodDTO {
+  id: number
+  name: string
+  feePercentage: number
+  daysToReceive: number
+}
+
+// Configuração de Status
 const STATUS_CONFIG: Record<string, { label: string, badgeClass: string, iconClass: string, colorClass: string, Icon: any }> = {
   CANCELLED: { 
     label: 'Cancelado', 
@@ -68,13 +80,31 @@ export default function HomePage() {
   const [date, setDate] = useState<Date | undefined>(new Date())
   const [schedules, setSchedules] = useState<ScheduleMinDTO[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  
   const [openDropdownId, setOpenDropdownId] = useState<number | null>(null)
 
+  // Estados do Checkout
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodDTO[]>([])
+  const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false)
+  const [selectedAppointment, setSelectedAppointment] = useState<ScheduleMinDTO | null>(null)
+  
+  // 🚨 Novos estados do Formulário de Checkout
+  const [selectedPaymentId, setSelectedPaymentId] = useState("")
+  const [amountPaid, setAmountPaid] = useState("")
+  const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false)
+
+  // Carrega agendamentos quando a data muda
   useEffect(() => {
     loadSchedules()
   }, [date])
 
+  // Carrega os métodos de pagamento uma única vez para o modal
+  useEffect(() => {
+    api.get('/payment-methods')
+      .then(res => setPaymentMethods(res.data))
+      .catch(err => console.error("Erro ao carregar métodos de pagamento:", err))
+  }, [])
+
+  // Fechar dropdown ao clicar fora
   useEffect(() => {
     const handleClickOutside = () => setOpenDropdownId(null)
     document.addEventListener('click', handleClickOutside)
@@ -106,14 +136,17 @@ export default function HomePage() {
   const handleChangeStatus = async (e: React.MouseEvent, appointment: ScheduleMinDTO, newStatus: string) => {
     e.preventDefault()
     e.stopPropagation()
-
     setOpenDropdownId(null)
 
     if (appointment.scheduleStatus === newStatus) return
 
+    // Se for concluir, prepara os dados e abre o Modal
     if (newStatus === 'COMPLETED') {
-      const confirm = window.confirm(`Deseja finalizar o atendimento de ${appointment.clientName}?\nIsso irá gerar um lançamento financeiro no caixa.`)
-      if (!confirm) return
+      setSelectedAppointment(appointment)
+      // 🚨 Pré-preenche o campo "Valor Pago" com o valor original do agendamento
+      setAmountPaid(appointment.scheduleValue.toFixed(2)) 
+      setIsCheckoutModalOpen(true)
+      return
     }
 
     try {
@@ -122,6 +155,36 @@ export default function HomePage() {
     } catch (error) {
       console.error("Erro ao atualizar status:", error)
       alert("Não foi possível atualizar o status do agendamento.")
+    }
+  }
+
+  // 🚨 Integração com a rota /financial-movements/checkout
+  const handleCheckoutSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedAppointment || !selectedPaymentId || !amountPaid) return
+
+    setIsSubmittingCheckout(true)
+    try {
+      // Monta o payload exatamente como o CheckOutDTO no Java espera
+      const payload = {
+        scheduleId: selectedAppointment.id,
+        paymentMethodId: parseInt(selectedPaymentId, 10),
+        value: parseFloat(amountPaid.replace(",", ".")) // Valor real que o cliente passou no cartão
+      }
+
+      await api.post('/financial-movements/checkout', payload)
+      
+      // Sucesso: fecha o modal, limpa a seleção e recarrega a agenda
+      setIsCheckoutModalOpen(false)
+      setSelectedAppointment(null)
+      setSelectedPaymentId("")
+      setAmountPaid("")
+      loadSchedules()
+    } catch (error) {
+      console.error("Erro no checkout:", error)
+      alert("Erro ao finalizar o atendimento.")
+    } finally {
+      setIsSubmittingCheckout(false)
     }
   }
 
@@ -143,7 +206,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6">
+    <div className="flex flex-col lg:flex-row gap-6 relative">
       <div className="w-full lg:w-80 space-y-6">
         <Card className="shadow-sm">
           <CardHeader>
@@ -200,15 +263,12 @@ export default function HomePage() {
                     <CardContent className="p-5 flex items-center justify-between">
                       
                       <div className="flex items-start gap-5">
-                        
                         <div className="relative mt-1">
                           <button
                             onClick={(e) => {
-                              // 🚨 O Segredo está aqui: stopImmediatePropagation mata o evento antes de chegar no document
                               e.preventDefault()
                               e.stopPropagation()
                               e.nativeEvent.stopImmediatePropagation()
-                              
                               setOpenDropdownId(openDropdownId === appointment.id ? null : appointment.id)
                             }}
                             title="Alterar Status"
@@ -218,7 +278,6 @@ export default function HomePage() {
                             <ChevronDown className="w-3 h-3 opacity-70" />
                           </button>
 
-                          {/* 🚨 Novo Visual do Menu Suspenso (Idêntico à referência) */}
                           {openDropdownId === appointment.id && (
                             <div className="absolute top-14 left-0 w-56 bg-white border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.12)] rounded-xl z-50 flex flex-col py-2 animate-in fade-in zoom-in-95 duration-100">
                               {Object.entries(STATUS_CONFIG).map(([statusKey, config]) => (
@@ -293,6 +352,128 @@ export default function HomePage() {
           )}
         </div>
       </div>
+
+      {/* 🚨 MODAL DE CHECKOUT FINANCEIRO */}
+      {isCheckoutModalOpen && selectedAppointment && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden transform transition-all">
+            
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <DollarSign className="w-5 h-5 text-green-600" /> Finalizar Atendimento
+              </h3>
+              <button 
+                onClick={() => {
+                  setIsCheckoutModalOpen(false)
+                  setSelectedPaymentId("")
+                  setAmountPaid("")
+                }}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCheckoutSubmit}>
+              <div className="p-6 space-y-6">
+                
+                {/* Resumo do Atendimento */}
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 space-y-2">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500 font-medium">Cliente:</span>
+                    <span className="text-slate-900 font-bold">{selectedAppointment.clientName}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500 font-medium">Serviços:</span>
+                    <span className="text-slate-900 font-medium text-right max-w-[200px] truncate">
+                      {selectedAppointment.serviceNames.join(", ")}
+                    </span>
+                  </div>
+                  <div className="pt-2 mt-2 border-t border-slate-200 flex justify-between items-center">
+                    <span className="text-slate-700 font-bold">Valor de Tabela:</span>
+                    <span className="text-lg text-slate-900 font-black">
+                      R$ {selectedAppointment.scheduleValue.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4">
+                  {/* Seleção do Método de Pagamento */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                      <CreditCard className="w-4 h-4" /> Forma de Pagamento Utilizada
+                    </label>
+                    <select
+                      required
+                      value={selectedPaymentId}
+                      onChange={(e) => setSelectedPaymentId(e.target.value)}
+                      className="flex h-11 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    >
+                      <option value="" disabled>Selecione como o cliente pagou...</option>
+                      {paymentMethods.map((method) => (
+                        <option key={method.id} value={method.id}>
+                          {method.name} {method.feePercentage > 0 ? `(Taxa: ${method.feePercentage}%)` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* 🚨 Campo de Valor Pago (Com permissão para descontos comerciais) */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                      <DollarSign className="w-4 h-4" /> Valor Efetivamente Pago
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-3 text-sm text-slate-500 font-bold">R$</span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required
+                        value={amountPaid}
+                        onChange={(e) => setAmountPaid(e.target.value)}
+                        className="pl-9 h-11 border-slate-300 font-medium"
+                      />
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Altere o valor apenas se concedeu algum desconto especial ao cliente.
+                    </p>
+                  </div>
+                </div>
+
+              </div>
+
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setIsCheckoutModalOpen(false)
+                    setSelectedPaymentId("")
+                    setAmountPaid("")
+                  }}
+                  disabled={isSubmittingCheckout}
+                  className="h-11 font-medium"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmittingCheckout || !selectedPaymentId || !amountPaid}
+                  className="bg-green-600 hover:bg-green-700 text-white h-11 px-6 font-bold shadow-sm"
+                >
+                  {isSubmittingCheckout ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Processando...</>
+                  ) : (
+                    "Confirmar Checkout"
+                  )}
+                </Button>
+              </div>
+            </form>
+
+          </div>
+        </div>
+      )}
     </div>
   )
 }

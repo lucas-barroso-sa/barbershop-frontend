@@ -2,14 +2,13 @@
 
 import * as React from "react"
 import { useState, useEffect } from "react"
-import api from "@/lib/api" // Ajuste o caminho se a sua instância do Axios ficar em outro lugar
+import api from "@/lib/api"
 import { 
   TrendingUp, 
   TrendingDown, 
   DollarSign, 
   Plus, 
   Search, 
-  Filter, 
   ArrowUpRight, 
   ArrowDownRight, 
   FileText,
@@ -17,7 +16,9 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
-  Loader2
+  Loader2,
+  X,
+  Banknote
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -32,8 +33,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-// 1. Tipagem refletindo o DTO do Java (FinancialMovementGetMinDTO)
-interface FinancialMovementDTO {
+// 1. Interface para a Tabela
+interface FinancialMovementMinDTO {
   id: number
   eventType: "SERVICE_PAYMENT" | "PRODUCT_SALE" | "COST_CENTER" | "PAYROLL"
   movementType: "INCOME" | "EXPENSE"
@@ -45,25 +46,46 @@ interface FinancialMovementDTO {
   costCenterName: string | null
 }
 
+// 2. Interface para o Modal 
+interface FinancialMovementFullDTO {
+  id: number
+  grossAmount: number
+  netAmount: number
+  dueDate: string | null
+  paymentDate: string | null
+  description: string
+  clientName: string | null
+  bankName: string | null
+  paymentMethodName: string | null
+}
+
 export default function FinancialPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [activeTab, setActiveTab] = useState<"CAIXA" | "RECEBER" | "PAGAR">("CAIXA")
   
-  // Estados da API
-  const [movements, setMovements] = useState<FinancialMovementDTO[]>([])
+  // Estados da API da Tabela
+  const [movements, setMovements] = useState<FinancialMovementMinDTO[]>([])
   const [isLoading, setIsLoading] = useState(true)
   
+  // Estados do Modal de Baixa
+  const [isSettleModalOpen, setIsSettleModalOpen] = useState(false)
+  const [movementDetails, setMovementDetails] = useState<FinancialMovementFullDTO | null>(null)
+  const [modalMovementType, setModalMovementType] = useState<"INCOME" | "EXPENSE">("INCOME")
+  const [fetchingDetailsId, setFetchingDetailsId] = useState<number | null>(null)
+  const [isSettling, setIsSettling] = useState(false)
+  
+  // 🚨 Estado para a Data de Pagamento digitada pelo usuário
+  const [selectedPaymentDate, setSelectedPaymentDate] = useState(() => new Date().toISOString().split('T')[0])
+
   // Estados de Paginação e Data
   const [currentPage, setCurrentPage] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   
-  // Inicializa o mês atual no formato "YYYY-MM" (Ex: "2026-05")
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const today = new Date()
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
   })
 
-  // 2. Função para calcular o 1º e o último dia do mês selecionado (Com o TypeScript corrigido)
   const getMonthDateRange = (yyyyMM: string) => {
     const [year, month] = yyyyMM.split('-')
     const startDate = `${year}-${month}-01`
@@ -71,55 +93,90 @@ export default function FinancialPage() {
     return { startDate, endDate }
   }
 
-  // 3. O "Efeito" que busca os dados no Spring Boot
-  useEffect(() => {
-    async function fetchMovements() {
-      setIsLoading(true)
-      try {
-        const { startDate, endDate } = getMonthDateRange(selectedMonth)
-        
-        // Define qual URL chamar baseado na aba atual
-        let endpoint = ""
-        if (activeTab === "CAIXA") endpoint = "/financial-movements/cash-flow"
-        if (activeTab === "RECEBER") endpoint = "/financial-movements/receivables"
-        if (activeTab === "PAGAR") endpoint = "/financial-movements/payables"
+  const fetchMovements = async () => {
+    setIsLoading(true)
+    try {
+      const { startDate, endDate } = getMonthDateRange(selectedMonth)
+      
+      let endpoint = ""
+      if (activeTab === "CAIXA") endpoint = "/financial-movements/cash-flow"
+      if (activeTab === "RECEBER") endpoint = "/financial-movements/receivables"
+      if (activeTab === "PAGAR") endpoint = "/financial-movements/payables"
 
-        const response = await api.get(endpoint, {
-          params: {
-            startDate,
-            endDate,
-            pagina: currentPage,
-            tamanho: 20 // Trazemos 20 itens por página
-          }
-        })
+      const response = await api.get(endpoint, {
+        params: {
+          startDate,
+          endDate,
+          pagina: currentPage,
+          tamanho: 20 
+        }
+      })
 
-        // Popula os estados lendo os metadados do Page<T> do Spring
-        setMovements(response.data.content)
-        setTotalPages(response.data.totalPages)
+      setMovements(response.data.content)
+      setTotalPages(response.data.totalPages)
 
-      } catch (error) {
-        console.error("Erro ao buscar movimentações:", error)
-        setMovements([])
-      } finally {
-        setIsLoading(false)
-      }
+    } catch (error) {
+      console.error("Erro ao buscar movimentações:", error)
+      setMovements([])
+    } finally {
+      setIsLoading(false)
     }
+  }
 
+  useEffect(() => {
     fetchMovements()
   }, [activeTab, selectedMonth, currentPage])
 
-  // Resetar a página para 0 sempre que trocar de Aba ou de Mês
   useEffect(() => {
     setCurrentPage(0)
   }, [activeTab, selectedMonth])
 
-  // Lógica de Filtro em Texto (Aplicado sobre os dados da página atual)
+  // Lógica de Abertura do Modal 
+  const handleOpenSettleModal = async (movementMin: FinancialMovementMinDTO) => {
+    setFetchingDetailsId(movementMin.id)
+    setModalMovementType(movementMin.movementType)
+    
+    // 🚨 Sempre que abre o modal, sugere a data de hoje para o usuário
+    setSelectedPaymentDate(new Date().toISOString().split('T')[0])
+    
+    try {
+      const response = await api.get(`/financial-movements/${movementMin.id}`)
+      setMovementDetails(response.data)
+      setIsSettleModalOpen(true)
+    } catch (error) {
+      console.error("Erro ao buscar detalhes da movimentação:", error)
+      alert("Não foi possível carregar os detalhes. Tente novamente.")
+    } finally {
+      setFetchingDetailsId(null)
+    }
+  }
+
+  const handleSettleSubmit = async () => {
+    if (!movementDetails || !selectedPaymentDate) return
+
+    setIsSettling(true)
+    try {
+      // 🚨 Envia o ID na URL e a Data no Body, mantendo o padrão RESTful
+      await api.patch(`/financial-movements/${movementDetails.id}/settle`, {
+        paymentDate: selectedPaymentDate
+      })
+      
+      setIsSettleModalOpen(false)
+      setMovementDetails(null)
+      fetchMovements() 
+    } catch (error) {
+      console.error("Erro ao efetivar baixa:", error)
+      alert("Ocorreu um erro ao tentar efetivar a movimentação.")
+    } finally {
+      setIsSettling(false)
+    }
+  }
+
   const filteredMovements = movements.filter(m => 
     m.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
     m.costCenterName?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  // Dashboard Local (Calcula apenas com os dados carregados na tela)
   const localIncome = movements.filter(m => m.movementType === "INCOME" && m.movementStatus === "SETTLED").reduce((acc, curr) => acc + curr.netAmount, 0)
   const localExpense = movements.filter(m => m.movementType === "EXPENSE" && m.movementStatus === "SETTLED").reduce((acc, curr) => acc + curr.netAmount, 0)
   const localBalance = localIncome - localExpense
@@ -137,7 +194,7 @@ export default function FinancialPage() {
   return (
     <div className="space-y-8 max-w-7xl mx-auto p-4 lg:p-8">
       
-      {/* CABEÇALHO COM SELETOR DE MÊS */}
+      {/* CABEÇALHO */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900">Gestão Financeira</h1>
@@ -161,7 +218,7 @@ export default function FinancialPage() {
         </div>
       </div>
 
-      {/* CARDS DE RESUMO (Aviso: Temporariamente calculando apenas a página atual) */}
+      {/* CARDS DE RESUMO */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="border-none shadow-sm bg-white">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -200,10 +257,9 @@ export default function FinancialPage() {
         </Card>
       </div>
 
-      {/* ÁREA DA TABELA COM ABAS */}
+      {/* ÁREA DA TABELA */}
       <Card className="shadow-sm border-slate-200">
         
-        {/* NAVEGAÇÃO DAS ABAS */}
         <div className="flex border-b border-slate-100 px-6 pt-4">
           <button 
             onClick={() => setActiveTab("CAIXA")}
@@ -308,8 +364,10 @@ export default function FinancialPage() {
                           size="sm" 
                           variant={movement.movementType === "INCOME" ? "default" : "destructive"}
                           className={movement.movementType === "INCOME" ? "bg-green-600 hover:bg-green-700" : ""}
+                          onClick={() => handleOpenSettleModal(movement)}
+                          disabled={fetchingDetailsId === movement.id}
                         >
-                          Efetivar
+                          {fetchingDetailsId === movement.id ? <Loader2 className="w-4 h-4 animate-spin" /> : "Efetivar"}
                         </Button>
                       </TableCell>
                     )}
@@ -355,9 +413,141 @@ export default function FinancialPage() {
               </div>
             </div>
           )}
-
         </CardContent>
       </Card>
+
+      {/* 🚨 MODAL DE BAIXA ALIMENTADO PELO DTO */}
+      {isSettleModalOpen && movementDetails && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden transform transition-all">
+            
+            <div className="flex items-center justify-between px-8 py-5 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                {modalMovementType === "INCOME" ? (
+                  <ArrowUpRight className="w-6 h-6 text-green-500" />
+                ) : (
+                  <ArrowDownRight className="w-6 h-6 text-red-500" />
+                )}
+                <h3 className="text-xl font-bold text-slate-800 uppercase tracking-tight">
+                  {movementDetails.description}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setIsSettleModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-8 space-y-8">
+              
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                    {modalMovementType === "INCOME" ? "Receber de" : "Pagar para"}
+                  </label>
+                  <span className="text-lg text-slate-800 font-medium">
+                    {movementDetails.clientName || "Não informado"}
+                  </span>
+                </div>
+                
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                    Vencimento
+                  </label>
+                  <span className="text-lg text-slate-800 font-medium">
+                    {movementDetails.dueDate || "--/--/----"}
+                  </span>
+                </div>
+                
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                    Valor original R$
+                  </label>
+                  <span className="text-lg text-slate-800 font-medium">
+                    {movementDetails.grossAmount.toFixed(2)}
+                  </span>
+                </div>
+                
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                    {modalMovementType === "INCOME" ? "Saldo a receber R$" : "Saldo a pagar R$"}
+                  </label>
+                  <span className="text-lg text-slate-800 font-medium">
+                    {movementDetails.netAmount.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-6 rounded-lg border border-slate-100 flex flex-col sm:flex-row gap-6 relative overflow-hidden">
+                <Banknote className="absolute -right-6 -bottom-6 w-48 h-48 text-slate-200/50 -rotate-12 pointer-events-none" />
+
+                <div className="flex-1 space-y-2 relative z-10">
+                  <h4 className="text-sm font-bold text-slate-600 mb-4">DADOS DA BAIXA</h4>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                    {/* 🚨 Input de Data Editável */}
+                    <div>
+                      <label className="text-xs font-bold text-slate-600 block mb-1.5">
+                        {modalMovementType === "INCOME" ? "Data de recebimento" : "Data de pagamento"}
+                      </label>
+                      <Input 
+                        type="date" 
+                        required
+                        value={selectedPaymentDate} 
+                        onChange={(e) => setSelectedPaymentDate(e.target.value)}
+                        className="bg-white text-slate-900 border-slate-300 focus-visible:ring-blue-500 font-medium shadow-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-600 block mb-1.5">Forma de Pagamento</label>
+                      <div className="flex h-10 w-full rounded-md border border-slate-200 bg-white/50 px-3 py-2 text-sm text-slate-600 cursor-not-allowed">
+                        {movementDetails.paymentMethodName || "Padrão"}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-600 block mb-1.5">
+                        {modalMovementType === "INCOME" ? "Recebido via" : "Pago via"}
+                      </label>
+                      <div className="flex h-10 w-full rounded-md border border-slate-200 bg-white/50 px-3 py-2 text-sm text-slate-600 cursor-not-allowed">
+                        {movementDetails.bankName || "Conta Padrão"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="px-8 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsSettleModalOpen(false)}
+                disabled={isSettling}
+                className="h-10 text-slate-600 px-6"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleSettleSubmit}
+                disabled={isSettling || !selectedPaymentDate}
+                className="bg-[#2A85FF] hover:bg-[#1f6bdb] text-white h-10 px-8 font-bold shadow-sm"
+              >
+                {isSettling ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Efetuando baixa...</>
+                ) : (
+                  "Baixa total"
+                )}
+              </Button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   )
 }

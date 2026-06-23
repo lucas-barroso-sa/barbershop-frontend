@@ -1,8 +1,8 @@
 import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
-import { Users, Scissors, Package } from "lucide-react"
+import { Users, Scissors, Package, Landmark, CreditCard } from "lucide-react"
 
-// Estrutura de dados separada por categorias (igual à imagem)
+// Estrutura de dados separada por categorias
 const settingsSections = [
   {
     title: "Gerenciamento",
@@ -11,7 +11,24 @@ const settingsSections = [
         title: "Usuários",
         description: "Adições, permissões e informações de usuários do sistema.",
         icon: Users,
-        href: "/settings/users", // Rota futura para gerenciar a equipe
+        href: "/settings/users", 
+      },
+    ],
+  },
+  {
+    title: "Financeiro",
+    items: [
+      {
+        title: "Contas Bancárias",
+        description: "Gerenciamento de contas, caixas físicos e saldos da barbearia.",
+        icon: Landmark,
+        href: "/settings/bank-accounts", 
+      },
+      {
+        title: "Métodos de Pagamento",
+        description: "Configuração de taxas, prazos e maquininhas de cartão.",
+        icon: CreditCard,
+        href: "/settings/payment-methods", 
       },
     ],
   },
@@ -22,13 +39,13 @@ const settingsSections = [
         title: "Serviços",
         description: "Gerenciamento dos cortes e serviços disponíveis para agendamento.",
         icon: Scissors,
-        href: "/settings/services", // Rota futura para os serviços
+        href: "/settings/services", 
       },
       {
         title: "Produtos",
         description: "Controle de itens, valores e produtos para venda na barbearia.",
         icon: Package,
-        href: "/settings/products", // Rota futura para os produtos
+        href: "/settings/products", 
       },
     ],
   },
@@ -45,7 +62,7 @@ export default function SettingsPage() {
       <div className="space-y-10">
         {settingsSections.map((section) => (
           <section key={section.title} className="space-y-4">
-            {/* Título da Categoria (ex: Gerenciamento) */}
+            {/* Título da Categoria */}
             <h2 className="text-lg font-medium text-slate-600">
               {section.title}
             </h2>
