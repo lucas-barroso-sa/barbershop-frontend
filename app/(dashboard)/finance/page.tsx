@@ -18,7 +18,10 @@ import {
   ChevronRight,
   Loader2,
   X,
-  Banknote
+  Banknote,
+  CalendarDays,
+  Landmark,
+  Pencil
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -46,7 +49,7 @@ interface FinancialMovementMinDTO {
   costCenterName: string | null
 }
 
-// 2. Interface para o Modal 
+// 2. Interface para o Modal de Efetivação 
 interface FinancialMovementFullDTO {
   id: number
   grossAmount: number
@@ -56,7 +59,14 @@ interface FinancialMovementFullDTO {
   description: string
   clientName: string | null
   bankName: string | null
+  bankAccountId: number | null 
   paymentMethodName: string | null
+}
+
+// Interface de Contas Bancárias
+interface BankAccountDTO {
+  id: number
+  name: string
 }
 
 export default function FinancialPage() {
@@ -67,37 +77,64 @@ export default function FinancialPage() {
   const [movements, setMovements] = useState<FinancialMovementMinDTO[]>([])
   const [isLoading, setIsLoading] = useState(true)
   
-  // Estados do Modal de Baixa
+  // Estados de Contas Bancárias
+  const [bankAccounts, setBankAccounts] = useState<BankAccountDTO[]>([])
+  
+  // ==========================================
+  // ESTADOS: MODAL DE EFETIVAÇÃO (SETTLE)
+  // ==========================================
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false)
   const [movementDetails, setMovementDetails] = useState<FinancialMovementFullDTO | null>(null)
   const [modalMovementType, setModalMovementType] = useState<"INCOME" | "EXPENSE">("INCOME")
   const [fetchingDetailsId, setFetchingDetailsId] = useState<number | null>(null)
   const [isSettling, setIsSettling] = useState(false)
-  
-  // 🚨 Estado para a Data de Pagamento digitada pelo usuário
   const [selectedPaymentDate, setSelectedPaymentDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState("") 
 
-  // Estados de Paginação e Data
+  // ==========================================
+  // ESTADOS: MODAL DE CRIAÇÃO (MANUAL)
+  // ==========================================
+  const [isNewModalOpen, setIsNewModalOpen] = useState(false)
+  const [newDescription, setNewDescription] = useState("")
+  const [newValue, setNewValue] = useState("")
+  const [newDueDate, setNewDueDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [isCreating, setIsCreating] = useState(false)
+
+  // ==========================================
+  // 🚨 NOVO: ESTADOS DO MODAL DE EDIÇÃO
+  // ==========================================
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [movementToEdit, setMovementToEdit] = useState<FinancialMovementMinDTO | null>(null)
+  const [editDescription, setEditDescription] = useState("")
+  const [editDueDate, setEditDueDate] = useState("")
+  const [isEditing, setIsEditing] = useState(false)
+
+  // Estados de Paginação
   const [currentPage, setCurrentPage] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   
-  const [selectedMonth, setSelectedMonth] = useState(() => {
+  // ESTADOS DE DATA
+  const [startDate, setStartDate] = useState(() => {
     const today = new Date()
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
+    return firstDay.toISOString().split('T')[0]
+  })
+  
+  const [endDate, setEndDate] = useState(() => {
+    const today = new Date()
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+    return lastDay.toISOString().split('T')[0]
   })
 
-  const getMonthDateRange = (yyyyMM: string) => {
-    const [year, month] = yyyyMM.split('-')
-    const startDate = `${year}-${month}-01`
-    const endDate = new Date(Number(year), Number(month), 0).toISOString().split('T')[0] 
-    return { startDate, endDate }
-  }
+  useEffect(() => {
+    api.get('/bank')
+      .then(res => setBankAccounts(res.data))
+      .catch(err => console.error("Erro ao carregar contas bancárias:", err))
+  }, [])
 
   const fetchMovements = async () => {
     setIsLoading(true)
     try {
-      const { startDate, endDate } = getMonthDateRange(selectedMonth)
-      
       let endpoint = ""
       if (activeTab === "CAIXA") endpoint = "/financial-movements/cash-flow"
       if (activeTab === "RECEBER") endpoint = "/financial-movements/receivables"
@@ -105,8 +142,8 @@ export default function FinancialPage() {
 
       const response = await api.get(endpoint, {
         params: {
-          startDate,
-          endDate,
+          startDate: startDate,
+          endDate: endDate,
           pagina: currentPage,
           tamanho: 20 
         }
@@ -125,23 +162,28 @@ export default function FinancialPage() {
 
   useEffect(() => {
     fetchMovements()
-  }, [activeTab, selectedMonth, currentPage])
+  }, [activeTab, startDate, endDate, currentPage])
 
   useEffect(() => {
     setCurrentPage(0)
-  }, [activeTab, selectedMonth])
+  }, [activeTab, startDate, endDate])
 
-  // Lógica de Abertura do Modal 
+  // Lógica de Abertura do Modal de Efetivação
   const handleOpenSettleModal = async (movementMin: FinancialMovementMinDTO) => {
     setFetchingDetailsId(movementMin.id)
     setModalMovementType(movementMin.movementType)
-    
-    // 🚨 Sempre que abre o modal, sugere a data de hoje para o usuário
     setSelectedPaymentDate(new Date().toISOString().split('T')[0])
     
     try {
       const response = await api.get(`/financial-movements/${movementMin.id}`)
       setMovementDetails(response.data)
+      
+      if (response.data.bankAccountId) {
+        setSelectedBankAccountId(response.data.bankAccountId.toString())
+      } else {
+        setSelectedBankAccountId("")
+      }
+      
       setIsSettleModalOpen(true)
     } catch (error) {
       console.error("Erro ao buscar detalhes da movimentação:", error)
@@ -152,17 +194,18 @@ export default function FinancialPage() {
   }
 
   const handleSettleSubmit = async () => {
-    if (!movementDetails || !selectedPaymentDate) return
+    if (!movementDetails || !selectedPaymentDate || !selectedBankAccountId) return
 
     setIsSettling(true)
     try {
-      // 🚨 Envia o ID na URL e a Data no Body, mantendo o padrão RESTful
       await api.patch(`/financial-movements/${movementDetails.id}/settle`, {
-        paymentDate: selectedPaymentDate
+        paymentDate: selectedPaymentDate,
+        bankAccountId: parseInt(selectedBankAccountId, 10)
       })
       
       setIsSettleModalOpen(false)
       setMovementDetails(null)
+      setSelectedBankAccountId("")
       fetchMovements() 
     } catch (error) {
       console.error("Erro ao efetivar baixa:", error)
@@ -172,13 +215,75 @@ export default function FinancialPage() {
     }
   }
 
+  // Lógica de Criação de Movimento Manual
+  const handleCreateMovement = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsCreating(true)
+
+    try {
+      const payload = {
+        description: newDescription,
+        amount: parseFloat(newValue.replace(",", ".")),
+        dueDate: newDueDate,
+        movementType: activeTab === "RECEBER" ? "INCOME" : "EXPENSE" 
+      }
+
+      await api.post('/financial-movements', payload)
+      
+      setIsNewModalOpen(false)
+      setNewDescription("")
+      setNewValue("")
+      fetchMovements() 
+    } catch (error) {
+      console.error("Erro ao criar movimentação:", error)
+      alert("Erro ao salvar a nova movimentação.")
+    } finally {
+      setIsCreating(false)
+    }
+  }
+
+  // 🚨 Lógica de Abertura do NOVO Modal de Edição
+  const handleOpenEditModal = (movement: FinancialMovementMinDTO) => {
+    setMovementToEdit(movement)
+    setEditDescription(movement.description)
+    // O backend envia DD/MM/YYYY ou YYYY-MM-DD. Precisamos garantir YYYY-MM-DD para o <input type="date">
+    // Se o backend enviar "YYYY-MM-DD" direto, podemos usar:
+    setEditDueDate(movement.dueDate || "")
+    setIsEditModalOpen(true)
+  }
+
+  // 🚨 Lógica de Envio da Edição (PATCH)
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!movementToEdit || !editDescription || !editDueDate) return
+
+    setIsEditing(true)
+    try {
+      // ⚠️ IMPORTANTE: Crie um DTO e um endpoint no Java que aceite este payload:
+      // ex: PATCH /financial-movements/{id} com body { description, dueDate }
+      await api.patch(`/financial-movements/${movementToEdit.id}`, {
+        description: editDescription,
+        dueDate: editDueDate
+      })
+      
+      setIsEditModalOpen(false)
+      setMovementToEdit(null)
+      fetchMovements() 
+    } catch (error) {
+      console.error("Erro ao editar movimentação:", error)
+      alert("Ocorreu um erro ao tentar salvar as alterações.")
+    } finally {
+      setIsEditing(false)
+    }
+  }
+
   const filteredMovements = movements.filter(m => 
     m.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
     m.costCenterName?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  const localIncome = movements.filter(m => m.movementType === "INCOME" && m.movementStatus === "SETTLED").reduce((acc, curr) => acc + curr.netAmount, 0)
-  const localExpense = movements.filter(m => m.movementType === "EXPENSE" && m.movementStatus === "SETTLED").reduce((acc, curr) => acc + curr.netAmount, 0)
+  const localIncome = movements.filter(m => m.movementType === "INCOME").reduce((acc, curr) => acc + curr.netAmount, 0)
+  const localExpense = movements.filter(m => m.movementType === "EXPENSE").reduce((acc, curr) => acc + curr.netAmount, 0)
   const localBalance = localIncome - localExpense
 
   const translateEventType = (type: string) => {
@@ -195,66 +300,96 @@ export default function FinancialPage() {
     <div className="space-y-8 max-w-7xl mx-auto p-4 lg:p-8">
       
       {/* CABEÇALHO */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900">Gestão Financeira</h1>
           <p className="text-slate-500">Acompanhe o fluxo de caixa e as pendências do seu negócio.</p>
         </div>
         
-        <div className="flex items-center gap-4 w-full sm:w-auto">
-          <div className="flex items-center bg-white border border-slate-200 rounded-md px-3 h-10 shadow-sm">
-            <span className="text-sm font-semibold text-slate-600 mr-2">Período:</span>
-            <input 
-              type="month" 
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="text-sm text-slate-900 outline-none bg-transparent cursor-pointer"
-            />
+        <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto">
+          
+          <div className="flex items-center bg-white border border-slate-200 rounded-md shadow-sm overflow-hidden h-10">
+            <div className="bg-slate-50 px-3 border-r border-slate-200 flex items-center justify-center h-full">
+              <CalendarDays className="w-4 h-4 text-slate-500" />
+            </div>
+            
+            <div className="flex items-center px-2">
+              <span className="text-xs font-semibold text-slate-500 mr-2 uppercase">De:</span>
+              <input 
+                type="date" 
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="text-sm text-slate-900 outline-none bg-transparent cursor-pointer font-medium"
+              />
+            </div>
+
+            <div className="w-px h-6 bg-slate-200 mx-1"></div>
+
+            <div className="flex items-center px-2">
+              <span className="text-xs font-semibold text-slate-500 mr-2 uppercase">Até:</span>
+              <input 
+                type="date" 
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="text-sm text-slate-900 outline-none bg-transparent cursor-pointer font-medium"
+              />
+            </div>
           </div>
 
-          <Button className="bg-slate-900 hover:bg-slate-800 text-white flex gap-2 shadow-md">
-            <Plus className="w-4 h-4" /> Nova Movimentação
-          </Button>
+          {activeTab !== "CAIXA" && (
+            <Button 
+              onClick={() => setIsNewModalOpen(true)}
+              className="bg-slate-900 hover:bg-slate-800 text-white flex gap-2 shadow-md h-10"
+            >
+              <Plus className="w-4 h-4" /> Nova Movimentação
+            </Button>
+          )}
         </div>
       </div>
 
       {/* CARDS DE RESUMO */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="border-none shadow-sm bg-white">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-slate-500">Entradas (Página Atual)</CardTitle>
-            <div className="p-2 bg-green-100 text-green-700 rounded-full">
-              <TrendingUp className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-slate-900">R$ {localIncome.toFixed(2)}</div>
-          </CardContent>
-        </Card>
+        {(activeTab === "CAIXA" || activeTab === "RECEBER") && (
+          <Card className="border-none shadow-sm bg-white">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-slate-500">Entradas</CardTitle>
+              <div className="p-2 bg-green-100 text-green-700 rounded-full">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-slate-900">R$ {localIncome.toFixed(2)}</div>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card className="border-none shadow-sm bg-white">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-slate-500">Saídas (Página Atual)</CardTitle>
-            <div className="p-2 bg-red-100 text-red-700 rounded-full">
-              <TrendingDown className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-slate-900">R$ {localExpense.toFixed(2)}</div>
-          </CardContent>
-        </Card>
+        {(activeTab === "CAIXA" || activeTab === "PAGAR") && (
+          <Card className="border-none shadow-sm bg-white">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-slate-500">Saídas</CardTitle>
+              <div className="p-2 bg-red-100 text-red-700 rounded-full">
+                <TrendingDown className="w-4 h-4" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-slate-900">R$ {localExpense.toFixed(2)}</div>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card className="border-none shadow-sm bg-slate-900 text-white">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-slate-300">Saldo (Página Atual)</CardTitle>
-            <div className="p-2 bg-slate-800 text-slate-300 rounded-full">
-              <DollarSign className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">R$ {localBalance.toFixed(2)}</div>
-          </CardContent>
-        </Card>
+        {activeTab === "CAIXA" && (
+          <Card className="border-none shadow-sm bg-slate-900 text-white">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-slate-300">Saldo</CardTitle>
+              <div className="p-2 bg-slate-800 text-slate-300 rounded-full">
+                <DollarSign className="w-4 h-4" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">R$ {localBalance.toFixed(2)}</div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* ÁREA DA TABELA */}
@@ -313,7 +448,7 @@ export default function FinancialPage() {
                 <TableHead className="font-semibold">Descrição</TableHead>
                 <TableHead className="font-semibold">Categoria</TableHead>
                 <TableHead className="font-semibold text-right">Valor</TableHead>
-                {activeTab !== "CAIXA" && <TableHead className="font-semibold text-center w-[120px]">Ação</TableHead>}
+                {activeTab !== "CAIXA" && <TableHead className="font-semibold text-center w-[160px]">Ações</TableHead>}
               </TableRow>
             </TableHeader>
             
@@ -360,15 +495,29 @@ export default function FinancialPage() {
 
                     {activeTab !== "CAIXA" && (
                       <TableCell className="text-center">
-                        <Button 
-                          size="sm" 
-                          variant={movement.movementType === "INCOME" ? "default" : "destructive"}
-                          className={movement.movementType === "INCOME" ? "bg-green-600 hover:bg-green-700" : ""}
-                          onClick={() => handleOpenSettleModal(movement)}
-                          disabled={fetchingDetailsId === movement.id}
-                        >
-                          {fetchingDetailsId === movement.id ? <Loader2 className="w-4 h-4 animate-spin" /> : "Efetivar"}
-                        </Button>
+                        <div className="flex items-center justify-center gap-2">
+                          {/* 🚨 BOTÃO DE EDITAR */}
+                          <Button 
+                            variant="outline" 
+                            size="icon" 
+                            className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-200"
+                            onClick={() => handleOpenEditModal(movement)}
+                            disabled={fetchingDetailsId === movement.id}
+                            title="Editar descrição e vencimento"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+
+                          <Button 
+                            size="sm" 
+                            variant={movement.movementType === "INCOME" ? "default" : "destructive"}
+                            className={movement.movementType === "INCOME" ? "bg-green-600 hover:bg-green-700" : ""}
+                            onClick={() => handleOpenSettleModal(movement)}
+                            disabled={fetchingDetailsId === movement.id}
+                          >
+                            {fetchingDetailsId === movement.id ? <Loader2 className="w-4 h-4 animate-spin" /> : "Efetivar"}
+                          </Button>
+                        </div>
                       </TableCell>
                     )}
 
@@ -379,7 +528,7 @@ export default function FinancialPage() {
                   <TableCell colSpan={activeTab === "CAIXA" ? 4 : 5} className="text-center py-16">
                     <div className="flex flex-col items-center justify-center text-slate-400">
                       <FileText className="w-12 h-12 mb-3 opacity-20" />
-                      <p className="font-medium">Nenhuma movimentação {activeTab === "CAIXA" ? "efetivada" : "pendente"} encontrada neste mês.</p>
+                      <p className="font-medium">Nenhuma movimentação {activeTab === "CAIXA" ? "efetivada" : "pendente"} encontrada neste período.</p>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -416,7 +565,92 @@ export default function FinancialPage() {
         </CardContent>
       </Card>
 
-      {/* 🚨 MODAL DE BAIXA ALIMENTADO PELO DTO */}
+      {/* =========================================
+          MODAL 1: CRIAÇÃO DE NOVA MOVIMENTAÇÃO
+          ========================================= */}
+      {isNewModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
+            
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Plus className={`w-5 h-5 ${activeTab === "RECEBER" ? "text-green-600" : "text-red-600"}`} />
+                {activeTab === "RECEBER" ? "Nova Conta a Receber" : "Nova Conta a Pagar"}
+              </h3>
+              <button 
+                onClick={() => setIsNewModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateMovement}>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="text-sm font-bold text-slate-700 block mb-1">Descrição</label>
+                  <Input 
+                    required 
+                    value={newDescription} 
+                    onChange={e => setNewDescription(e.target.value)} 
+                    placeholder={activeTab === "RECEBER" ? "Ex: Venda Avulsa..." : "Ex: Conta de Luz..."} 
+                  />
+                </div>
+                
+                <div>
+                  <label className="text-sm font-bold text-slate-700 block mb-1">Valor (R$)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-sm text-slate-500 font-bold">R$</span>
+                    <Input 
+                      required 
+                      type="number" 
+                      step="0.01" 
+                      min="0.01"
+                      value={newValue} 
+                      onChange={e => setNewValue(e.target.value)} 
+                      placeholder="0.00"
+                      className="pl-9" 
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-bold text-slate-700 block mb-1">Data de Vencimento</label>
+                  <Input 
+                    required 
+                    type="date" 
+                    value={newDueDate} 
+                    onChange={e => setNewDueDate(e.target.value)} 
+                  />
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setIsNewModalOpen(false)}
+                  disabled={isCreating}
+                >
+                  Cancelar
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={isCreating} 
+                  className={activeTab === "RECEBER" ? "bg-green-600 hover:bg-green-700 text-white font-bold" : "bg-red-600 hover:bg-red-700 text-white font-bold"}
+                >
+                  {isCreating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : "Salvar Registro"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+
+      {/* =========================================
+          MODAL 2: EFETIVAÇÃO DE BAIXA (SETTLE)
+          ========================================= */}
       {isSettleModalOpen && movementDetails && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden transform transition-all">
@@ -487,7 +721,6 @@ export default function FinancialPage() {
                   <h4 className="text-sm font-bold text-slate-600 mb-4">DADOS DA BAIXA</h4>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                    {/* 🚨 Input de Data Editável */}
                     <div>
                       <label className="text-xs font-bold text-slate-600 block mb-1.5">
                         {modalMovementType === "INCOME" ? "Data de recebimento" : "Data de pagamento"}
@@ -509,12 +742,23 @@ export default function FinancialPage() {
                     </div>
 
                     <div>
-                      <label className="text-xs font-bold text-slate-600 block mb-1.5">
+                      <label className="text-xs font-bold text-slate-600 flex items-center gap-1 mb-1.5">
+                        <Landmark className="w-3 h-3 text-slate-400" />
                         {modalMovementType === "INCOME" ? "Recebido via" : "Pago via"}
                       </label>
-                      <div className="flex h-10 w-full rounded-md border border-slate-200 bg-white/50 px-3 py-2 text-sm text-slate-600 cursor-not-allowed">
-                        {movementDetails.bankName || "Conta Padrão"}
-                      </div>
+                      <select
+                        required
+                        value={selectedBankAccountId}
+                        onChange={(e) => setSelectedBankAccountId(e.target.value)}
+                        className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      >
+                        <option value="" disabled>Selecione a conta...</option>
+                        {bankAccounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -534,7 +778,7 @@ export default function FinancialPage() {
               </Button>
               <Button
                 onClick={handleSettleSubmit}
-                disabled={isSettling || !selectedPaymentDate}
+                disabled={isSettling || !selectedPaymentDate || !selectedBankAccountId}
                 className="bg-[#2A85FF] hover:bg-[#1f6bdb] text-white h-10 px-8 font-bold shadow-sm"
               >
                 {isSettling ? (
@@ -548,6 +792,95 @@ export default function FinancialPage() {
           </div>
         </div>
       )}
+
+      {/* =========================================
+          🚨 MODAL 3: EDIÇÃO DE MOVIMENTAÇÃO
+          ========================================= */}
+      {isEditModalOpen && movementToEdit && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
+            
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-blue-600" />
+                Editar Pendência
+              </h3>
+              <button 
+                onClick={() => setIsEditModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit}>
+              <div className="p-6 space-y-5">
+                
+                {/* INFORMAÇÃO NÃO EDITÁVEL (CONTEXTO) */}
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Valor Registrado</span>
+                    <span className="text-sm font-bold text-slate-800">R$ {movementToEdit.netAmount.toFixed(2)}</span>
+                  </div>
+                  {movementToEdit.costCenterName && (
+                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-200">
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Categoria</span>
+                      <span className="text-xs font-medium text-slate-700">{movementToEdit.costCenterName}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* CAMPOS EDITÁVEIS */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold text-slate-700 block mb-1">
+                    Nova Descrição
+                  </label>
+                  <Input 
+                    required 
+                    value={editDescription} 
+                    onChange={e => setEditDescription(e.target.value)} 
+                    className="font-medium text-slate-900"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold text-slate-700 block mb-1">
+                    Novo Vencimento
+                  </label>
+                  <Input 
+                    required 
+                    type="date" 
+                    value={editDueDate} 
+                    onChange={e => setEditDueDate(e.target.value)} 
+                    className="font-medium text-slate-900"
+                  />
+                </div>
+
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setIsEditModalOpen(false)}
+                  disabled={isEditing}
+                  className="h-10 text-slate-600"
+                >
+                  Cancelar
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={isEditing || (editDescription === movementToEdit.description && editDueDate === movementToEdit.dueDate)} 
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-10 px-6 shadow-sm"
+                >
+                  {isEditing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : "Salvar Alterações"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
