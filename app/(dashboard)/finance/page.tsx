@@ -49,7 +49,7 @@ interface FinancialMovementMinDTO {
   costCenterName: string | null
 }
 
-// 2. Interface para o Modal de Efetivação 
+// 2. Interface para o Modal de Efetivação / Edição 
 interface FinancialMovementFullDTO {
   id: number
   grossAmount: number
@@ -101,12 +101,16 @@ export default function FinancialPage() {
   const [isCreating, setIsCreating] = useState(false)
 
   // ==========================================
-  // 🚨 NOVO: ESTADOS DO MODAL DE EDIÇÃO
+  // 🚨 ESTADOS: MODAL DE EDIÇÃO COMPLETA
   // ==========================================
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [movementToEdit, setMovementToEdit] = useState<FinancialMovementMinDTO | null>(null)
+  const [movementToEdit, setMovementToEdit] = useState<FinancialMovementFullDTO | null>(null)
+  const [editMovementType, setEditMovementType] = useState<"INCOME" | "EXPENSE">("INCOME")
   const [editDescription, setEditDescription] = useState("")
+  const [editAmount, setEditAmount] = useState("")
   const [editDueDate, setEditDueDate] = useState("")
+  const [editPaymentDate, setEditPaymentDate] = useState("")
+  const [editBankAccountId, setEditBankAccountId] = useState("")
   const [isEditing, setIsEditing] = useState(false)
 
   // Estados de Paginação
@@ -242,29 +246,48 @@ export default function FinancialPage() {
     }
   }
 
-  // 🚨 Lógica de Abertura do NOVO Modal de Edição
-  const handleOpenEditModal = (movement: FinancialMovementMinDTO) => {
-    setMovementToEdit(movement)
-    setEditDescription(movement.description)
-    // O backend envia DD/MM/YYYY ou YYYY-MM-DD. Precisamos garantir YYYY-MM-DD para o <input type="date">
-    // Se o backend enviar "YYYY-MM-DD" direto, podemos usar:
-    setEditDueDate(movement.dueDate || "")
-    setIsEditModalOpen(true)
+  // 🚨 Lógica de Abertura do NOVO Modal de Edição (Busca os dados completos)
+  const handleOpenEditModal = async (movementMin: FinancialMovementMinDTO) => {
+    setFetchingDetailsId(movementMin.id)
+    setEditMovementType(movementMin.movementType)
+    
+    try {
+      const response = await api.get(`/financial-movements/${movementMin.id}`)
+      const data: FinancialMovementFullDTO = response.data
+
+      setMovementToEdit(data)
+      setEditDescription(data.description)
+      // Mostra o valor bruto (grossAmount) para edição. Se por algum motivo não houver, usa o líquido.
+      setEditAmount(data.grossAmount ? data.grossAmount.toString() : data.netAmount.toString())
+      setEditDueDate(data.dueDate || "")
+      setEditPaymentDate(data.paymentDate || "")
+      setEditBankAccountId(data.bankAccountId ? data.bankAccountId.toString() : "")
+      
+      setIsEditModalOpen(true)
+    } catch (error) {
+      console.error("Erro ao buscar detalhes para edição:", error)
+      alert("Não foi possível carregar os detalhes da movimentação.")
+    } finally {
+      setFetchingDetailsId(null)
+    }
   }
 
-  // 🚨 Lógica de Envio da Edição (PATCH)
+  // 🚨 Lógica de Envio da Edição (PATCH) com o Payload completo
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!movementToEdit || !editDescription || !editDueDate) return
+    if (!movementToEdit || !editDescription || !editDueDate || !editAmount) return
 
     setIsEditing(true)
     try {
-      // ⚠️ IMPORTANTE: Crie um DTO e um endpoint no Java que aceite este payload:
-      // ex: PATCH /financial-movements/{id} com body { description, dueDate }
-      await api.patch(`/financial-movements/${movementToEdit.id}`, {
+      const payload = {
         description: editDescription,
-        dueDate: editDueDate
-      })
+        amount: parseFloat(editAmount.toString().replace(",", ".")),
+        dueDate: editDueDate,
+        paymentDate: editPaymentDate || null, // Permite enviar nulo se estiver vazio
+        bankAccountId: editBankAccountId ? parseInt(editBankAccountId, 10) : null
+      }
+
+      await api.patch(`/financial-movements/${movementToEdit.id}`, payload)
       
       setIsEditModalOpen(false)
       setMovementToEdit(null)
@@ -496,16 +519,15 @@ export default function FinancialPage() {
                     {activeTab !== "CAIXA" && (
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-2">
-                          {/* 🚨 BOTÃO DE EDITAR */}
                           <Button 
                             variant="outline" 
                             size="icon" 
                             className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-200"
                             onClick={() => handleOpenEditModal(movement)}
                             disabled={fetchingDetailsId === movement.id}
-                            title="Editar descrição e vencimento"
+                            title="Editar movimentação"
                           >
-                            <Pencil className="w-4 h-4" />
+                            {fetchingDetailsId === movement.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
                           </Button>
 
                           <Button 
@@ -794,89 +816,160 @@ export default function FinancialPage() {
       )}
 
       {/* =========================================
-          🚨 MODAL 3: EDIÇÃO DE MOVIMENTAÇÃO
+          🚨 MODAL 3: EDIÇÃO COMPLETA DE MOVIMENTAÇÃO
           ========================================= */}
       {isEditModalOpen && movementToEdit && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden transform transition-all">
             
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <Pencil className="w-5 h-5 text-blue-600" />
-                Editar Pendência
-              </h3>
+            <div className="flex items-center justify-between px-8 py-5 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <Pencil className="w-6 h-6 text-blue-500" />
+                <h3 className="text-xl font-bold text-slate-800 uppercase tracking-tight">
+                  Editar Movimentação
+                </h3>
+              </div>
               <button 
                 onClick={() => setIsEditModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
               >
-                <X className="w-5 h-5" />
+                <X className="w-6 h-6" />
               </button>
             </div>
 
-            <form onSubmit={handleEditSubmit}>
-              <div className="p-6 space-y-5">
+            <div className="p-8 space-y-8">
+              
+              {/* INFORMAÇÕES DE CONTEXTO */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                    {editMovementType === "INCOME" ? "Receber de" : "Pagar para"}
+                  </label>
+                  <span className="text-lg text-slate-800 font-medium">
+                    {movementToEdit.clientName || "Não informado"}
+                  </span>
+                </div>
                 
-                {/* INFORMAÇÃO NÃO EDITÁVEL (CONTEXTO) */}
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Valor Registrado</span>
-                    <span className="text-sm font-bold text-slate-800">R$ {movementToEdit.netAmount.toFixed(2)}</span>
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                    Forma de Pagamento
+                  </label>
+                  <span className="text-lg text-slate-800 font-medium">
+                    {movementToEdit.paymentMethodName || "Padrão"}
+                  </span>
+                </div>
+                
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                    Status Atual
+                  </label>
+                  <span className="text-lg text-slate-800 font-medium">
+                    {movementToEdit.paymentDate ? "Efetivada" : "Pendente"}
+                  </span>
+                </div>
+              </div>
+
+              {/* FORMULÁRIO DE EDIÇÃO */}
+              <div className="bg-slate-50 p-6 rounded-lg border border-slate-100 relative overflow-hidden">
+                <h4 className="text-sm font-bold text-slate-600 mb-4">DADOS EDITÁVEIS</h4>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10">
+                  
+                  {/* Descrição - Ocupa 2 colunas em telas grandes */}
+                  <div className="lg:col-span-2">
+                    <label className="text-xs font-bold text-slate-600 block mb-1.5">Descrição</label>
+                    <Input 
+                      required 
+                      value={editDescription} 
+                      onChange={e => setEditDescription(e.target.value)} 
+                      className="bg-white font-medium text-slate-900 border-slate-300 shadow-sm"
+                    />
                   </div>
-                  {movementToEdit.costCenterName && (
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-200">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Categoria</span>
-                      <span className="text-xs font-medium text-slate-700">{movementToEdit.costCenterName}</span>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 block mb-1.5">Valor (R$)</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-sm text-slate-500 font-bold">R$</span>
+                      <Input 
+                        required 
+                        type="number" 
+                        step="0.01"
+                        value={editAmount} 
+                        onChange={e => setEditAmount(e.target.value)} 
+                        className="bg-white font-medium text-slate-900 border-slate-300 shadow-sm pl-9"
+                      />
                     </div>
-                  )}
-                </div>
+                  </div>
 
-                {/* CAMPOS EDITÁVEIS */}
-                <div className="space-y-1.5">
-                  <label className="text-sm font-bold text-slate-700 block mb-1">
-                    Nova Descrição
-                  </label>
-                  <Input 
-                    required 
-                    value={editDescription} 
-                    onChange={e => setEditDescription(e.target.value)} 
-                    className="font-medium text-slate-900"
-                  />
-                </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 block mb-1.5">Data de Vencimento</label>
+                    <Input 
+                      required 
+                      type="date" 
+                      value={editDueDate} 
+                      onChange={e => setEditDueDate(e.target.value)} 
+                      className="bg-white font-medium text-slate-900 border-slate-300 shadow-sm"
+                    />
+                  </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-sm font-bold text-slate-700 block mb-1">
-                    Novo Vencimento
-                  </label>
-                  <Input 
-                    required 
-                    type="date" 
-                    value={editDueDate} 
-                    onChange={e => setEditDueDate(e.target.value)} 
-                    className="font-medium text-slate-900"
-                  />
-                </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 block mb-1.5">Data de Pagamento</label>
+                    <Input 
+                      type="date" 
+                      value={editPaymentDate} 
+                      onChange={e => setEditPaymentDate(e.target.value)} 
+                      className="bg-white font-medium text-slate-900 border-slate-300 shadow-sm"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Deixe vazio se ainda não pagou/recebeu.</p>
+                  </div>
 
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 flex items-center gap-1 mb-1.5">
+                      <Landmark className="w-3 h-3 text-slate-400" />
+                      Conta Bancária
+                    </label>
+                    <select
+                      value={editBankAccountId}
+                      onChange={(e) => setEditBankAccountId(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shadow-sm"
+                    >
+                      <option value="">Selecione a conta...</option>
+                      {bankAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                </div>
               </div>
 
-              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => setIsEditModalOpen(false)}
-                  disabled={isEditing}
-                  className="h-10 text-slate-600"
-                >
-                  Cancelar
-                </Button>
-                <Button 
-                  type="submit" 
-                  disabled={isEditing || (editDescription === movementToEdit.description && editDueDate === movementToEdit.dueDate)} 
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-10 px-6 shadow-sm"
-                >
-                  {isEditing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : "Salvar Alterações"}
-                </Button>
-              </div>
-            </form>
+            </div>
+
+            <div className="px-8 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsEditModalOpen(false)}
+                disabled={isEditing}
+                className="h-10 text-slate-600 px-6"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleEditSubmit}
+                disabled={isEditing || !editDescription || !editDueDate || !editAmount}
+                className="bg-blue-600 hover:bg-blue-700 text-white h-10 px-8 font-bold shadow-sm"
+              >
+                {isEditing ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Salvando...</>
+                ) : (
+                  "Salvar Alterações"
+                )}
+              </Button>
+            </div>
+
           </div>
         </div>
       )}
