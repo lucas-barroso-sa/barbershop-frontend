@@ -2,7 +2,7 @@ import axios from 'axios';
 import { parseCookies } from 'nookies'; // Sugestão para lidar com cookies no Next.js
 
 const api = axios.create({
-  baseURL: 'http://localhost:8080', // URL do seu Spring Boot
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080', // Usa a variável da Vercel ou o local por padrão
 });
 
 // O "Porteiro": Interceptor de Requisição
