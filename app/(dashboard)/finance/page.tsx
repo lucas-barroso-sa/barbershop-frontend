@@ -21,7 +21,8 @@ import {
   Banknote,
   CalendarDays,
   Landmark,
-  Pencil
+  Pencil,
+  CreditCard
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -63,8 +64,13 @@ interface FinancialMovementFullDTO {
   paymentMethodName: string | null
 }
 
-// Interface de Contas Bancárias
+// Interfaces Auxiliares
 interface BankAccountDTO {
+  id: number
+  name: string
+}
+
+interface PaymentMethodDTO {
   id: number
   name: string
 }
@@ -73,12 +79,11 @@ export default function FinancialPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [activeTab, setActiveTab] = useState<"CAIXA" | "RECEBER" | "PAGAR">("CAIXA")
   
-  // Estados da API da Tabela
+  // Estados da API da Tabela e Configurações
   const [movements, setMovements] = useState<FinancialMovementMinDTO[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  
-  // Estados de Contas Bancárias
   const [bankAccounts, setBankAccounts] = useState<BankAccountDTO[]>([])
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodDTO[]>([])
   
   // ==========================================
   // ESTADOS: MODAL DE EFETIVAÇÃO (SETTLE)
@@ -98,10 +103,11 @@ export default function FinancialPage() {
   const [newDescription, setNewDescription] = useState("")
   const [newValue, setNewValue] = useState("")
   const [newDueDate, setNewDueDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [newPaymentMethodId, setNewPaymentMethodId] = useState("")
   const [isCreating, setIsCreating] = useState(false)
 
   // ==========================================
-  // 🚨 ESTADOS: MODAL DE EDIÇÃO COMPLETA
+  // ESTADOS: MODAL DE EDIÇÃO COMPLETA
   // ==========================================
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [movementToEdit, setMovementToEdit] = useState<FinancialMovementFullDTO | null>(null)
@@ -110,6 +116,7 @@ export default function FinancialPage() {
   const [editAmount, setEditAmount] = useState("")
   const [editDueDate, setEditDueDate] = useState("")
   const [editPaymentDate, setEditPaymentDate] = useState("")
+  const [editPaymentMethodId, setEditPaymentMethodId] = useState("")
   const [editBankAccountId, setEditBankAccountId] = useState("")
   const [isEditing, setIsEditing] = useState(false)
 
@@ -131,9 +138,13 @@ export default function FinancialPage() {
   })
 
   useEffect(() => {
-    api.get('/bank')
-      .then(res => setBankAccounts(res.data))
-      .catch(err => console.error("Erro ao carregar contas bancárias:", err))
+    Promise.all([
+      api.get('/bank'),
+      api.get('/payment-methods')
+    ]).then(([bankRes, methodsRes]) => {
+      setBankAccounts(bankRes.data)
+      setPaymentMethods(methodsRes.data)
+    }).catch(err => console.error("Erro ao carregar configurações financeiras:", err))
   }, [])
 
   const fetchMovements = async () => {
@@ -219,7 +230,7 @@ export default function FinancialPage() {
     }
   }
 
-  // Lógica de Criação de Movimento Manual
+  // 🚨 Lógica de Criação Manual (Formatada para o FinancialMovementManualInsertDTO)
   const handleCreateMovement = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsCreating(true)
@@ -227,8 +238,9 @@ export default function FinancialPage() {
     try {
       const payload = {
         description: newDescription,
-        amount: parseFloat(newValue.replace(",", ".")),
+        grossAmount: parseFloat(newValue.replace(",", ".")), // Mapeado para grossAmount
         dueDate: newDueDate,
+        paymentMethodId: newPaymentMethodId ? parseInt(newPaymentMethodId, 10) : null,
         movementType: activeTab === "RECEBER" ? "INCOME" : "EXPENSE" 
       }
 
@@ -237,6 +249,7 @@ export default function FinancialPage() {
       setIsNewModalOpen(false)
       setNewDescription("")
       setNewValue("")
+      setNewPaymentMethodId("")
       fetchMovements() 
     } catch (error) {
       console.error("Erro ao criar movimentação:", error)
@@ -246,7 +259,7 @@ export default function FinancialPage() {
     }
   }
 
-  // 🚨 Lógica de Abertura do NOVO Modal de Edição (Busca os dados completos)
+  // Lógica de Abertura do Modal de Edição (Cruzando o Nome com o ID)
   const handleOpenEditModal = async (movementMin: FinancialMovementMinDTO) => {
     setFetchingDetailsId(movementMin.id)
     setEditMovementType(movementMin.movementType)
@@ -257,12 +270,14 @@ export default function FinancialPage() {
 
       setMovementToEdit(data)
       setEditDescription(data.description)
-      // Mostra o valor bruto (grossAmount) para edição. Se por algum motivo não houver, usa o líquido.
       setEditAmount(data.grossAmount ? data.grossAmount.toString() : data.netAmount.toString())
       setEditDueDate(data.dueDate || "")
       setEditPaymentDate(data.paymentDate || "")
       setEditBankAccountId(data.bankAccountId ? data.bankAccountId.toString() : "")
       
+      const linkedMethod = paymentMethods.find(m => m.name === data.paymentMethodName)
+      setEditPaymentMethodId(linkedMethod ? linkedMethod.id.toString() : "")
+
       setIsEditModalOpen(true)
     } catch (error) {
       console.error("Erro ao buscar detalhes para edição:", error)
@@ -272,7 +287,7 @@ export default function FinancialPage() {
     }
   }
 
-  // 🚨 Lógica de Envio da Edição (PATCH) com o Payload completo
+  // Lógica de Envio da Edição (PATCH com paymentMethodId)
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!movementToEdit || !editDescription || !editDueDate || !editAmount) return
@@ -283,7 +298,8 @@ export default function FinancialPage() {
         description: editDescription,
         amount: parseFloat(editAmount.toString().replace(",", ".")),
         dueDate: editDueDate,
-        paymentDate: editPaymentDate || null, // Permite enviar nulo se estiver vazio
+        paymentDate: editPaymentDate || null,
+        paymentMethodId: editPaymentMethodId ? parseInt(editPaymentMethodId, 10) : null,
         bankAccountId: editBankAccountId ? parseInt(editBankAccountId, 10) : null
       }
 
@@ -588,87 +604,143 @@ export default function FinancialPage() {
       </Card>
 
       {/* =========================================
-          MODAL 1: CRIAÇÃO DE NOVA MOVIMENTAÇÃO
+          🚨 MODAL 1: CRIAÇÃO DE NOVA MOVIMENTAÇÃO (AJUSTADO)
           ========================================= */}
       {isNewModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden transform transition-all">
             
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <Plus className={`w-5 h-5 ${activeTab === "RECEBER" ? "text-green-600" : "text-red-600"}`} />
-                {activeTab === "RECEBER" ? "Nova Conta a Receber" : "Nova Conta a Pagar"}
-              </h3>
+            <div className="flex items-center justify-between px-8 py-5 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <Plus className={`w-6 h-6 ${activeTab === "RECEBER" ? "text-green-500" : "text-red-500"}`} />
+                <h3 className="text-xl font-bold text-slate-800 uppercase tracking-tight">
+                  {activeTab === "RECEBER" ? "Nova Conta a Receber" : "Nova Conta a Pagar"}
+                </h3>
+              </div>
               <button 
                 onClick={() => setIsNewModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
               >
-                <X className="w-5 h-5" />
+                <X className="w-6 h-6" />
               </button>
             </div>
 
             <form onSubmit={handleCreateMovement}>
-              <div className="p-6 space-y-4">
-                <div>
-                  <label className="text-sm font-bold text-slate-700 block mb-1">Descrição</label>
-                  <Input 
-                    required 
-                    value={newDescription} 
-                    onChange={e => setNewDescription(e.target.value)} 
-                    placeholder={activeTab === "RECEBER" ? "Ex: Venda Avulsa..." : "Ex: Conta de Luz..."} 
-                  />
-                </div>
+              <div className="p-8 space-y-8">
                 
-                <div>
-                  <label className="text-sm font-bold text-slate-700 block mb-1">Valor (R$)</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-sm text-slate-500 font-bold">R$</span>
-                    <Input 
-                      required 
-                      type="number" 
-                      step="0.01" 
-                      min="0.01"
-                      value={newValue} 
-                      onChange={e => setNewValue(e.target.value)} 
-                      placeholder="0.00"
-                      className="pl-9" 
-                    />
+                {/* INFORMAÇÕES DE CONTEXTO */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pb-2">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                      Tipo de Movimentação
+                    </label>
+                    <span className={`text-lg font-medium ${activeTab === "RECEBER" ? "text-green-600" : "text-red-600"}`}>
+                      {activeTab === "RECEBER" ? "Entrada (Receita)" : "Saída (Despesa)"}
+                    </span>
+                  </div>
+                  
+                  <div>
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                      Status Inicial
+                    </label>
+                    <span className="text-lg text-slate-800 font-medium">
+                      Pendente
+                    </span>
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-sm font-bold text-slate-700 block mb-1">Data de Vencimento</label>
-                  <Input 
-                    required 
-                    type="date" 
-                    value={newDueDate} 
-                    onChange={e => setNewDueDate(e.target.value)} 
-                  />
+                {/* FORMULÁRIO DE CRIAÇÃO */}
+                <div className="bg-slate-50 p-6 rounded-lg border border-slate-100 relative overflow-hidden">
+                  <h4 className="text-sm font-bold text-slate-600 mb-4">DADOS DA MOVIMENTAÇÃO</h4>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 relative z-10">
+                    
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-bold text-slate-600 block mb-1.5">Descrição</label>
+                      <Input 
+                        required 
+                        value={newDescription} 
+                        onChange={e => setNewDescription(e.target.value)} 
+                        placeholder={activeTab === "RECEBER" ? "Ex: Venda Avulsa..." : "Ex: Conta de Luz..."} 
+                        className="bg-white font-medium text-slate-900 border-slate-300 shadow-sm"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="text-xs font-bold text-slate-600 block mb-1.5">Valor Bruto (R$)</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-sm text-slate-500 font-bold">R$</span>
+                        <Input 
+                          required 
+                          type="number" 
+                          step="0.01" 
+                          min="0.01"
+                          value={newValue} 
+                          onChange={e => setNewValue(e.target.value)} 
+                          placeholder="0.00"
+                          className="bg-white font-medium text-slate-900 border-slate-300 shadow-sm pl-9" 
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-600 block mb-1.5">Data de Vencimento</label>
+                      <Input 
+                        required 
+                        type="date" 
+                        value={newDueDate} 
+                        onChange={e => setNewDueDate(e.target.value)} 
+                        className="bg-white font-medium text-slate-900 border-slate-300 shadow-sm"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-bold text-slate-600 flex items-center gap-1 mb-1.5">
+                        <CreditCard className="w-3 h-3 text-slate-400" />
+                        Forma de Pagamento (Define a Taxa)
+                      </label>
+                      <select
+                        required
+                        value={newPaymentMethodId}
+                        onChange={(e) => setNewPaymentMethodId(e.target.value)}
+                        className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shadow-sm"
+                      >
+                        <option value="">Selecione...</option>
+                        {paymentMethods.map((method) => (
+                          <option key={method.id} value={method.id}>
+                            {method.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                  </div>
                 </div>
+
               </div>
 
-              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+              <div className="px-8 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
                 <Button 
                   type="button" 
                   variant="outline" 
                   onClick={() => setIsNewModalOpen(false)}
                   disabled={isCreating}
+                  className="h-10 text-slate-600 px-6"
                 >
                   Cancelar
                 </Button>
                 <Button 
                   type="submit" 
-                  disabled={isCreating} 
-                  className={activeTab === "RECEBER" ? "bg-green-600 hover:bg-green-700 text-white font-bold" : "bg-red-600 hover:bg-red-700 text-white font-bold"}
+                  disabled={isCreating || !newPaymentMethodId} 
+                  className={`h-10 px-8 font-bold shadow-sm text-white ${activeTab === "RECEBER" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}`}
                 >
-                  {isCreating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : "Salvar Registro"}
+                  {isCreating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Salvando...</> : "Salvar Registro"}
                 </Button>
               </div>
             </form>
           </div>
         </div>
       )}
-
 
       {/* =========================================
           MODAL 2: EFETIVAÇÃO DE BAIXA (SETTLE)
@@ -816,7 +888,7 @@ export default function FinancialPage() {
       )}
 
       {/* =========================================
-          🚨 MODAL 3: EDIÇÃO COMPLETA DE MOVIMENTAÇÃO
+          MODAL 3: EDIÇÃO COMPLETA DE MOVIMENTAÇÃO
           ========================================= */}
       {isEditModalOpen && movementToEdit && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in">
@@ -925,6 +997,25 @@ export default function FinancialPage() {
 
                   <div>
                     <label className="text-xs font-bold text-slate-600 flex items-center gap-1 mb-1.5">
+                      <CreditCard className="w-3 h-3 text-slate-400" />
+                      Forma de Pagamento
+                    </label>
+                    <select
+                      value={editPaymentMethodId}
+                      onChange={(e) => setEditPaymentMethodId(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shadow-sm"
+                    >
+                      <option value="">Selecione...</option>
+                      {paymentMethods.map((method) => (
+                        <option key={method.id} value={method.id}>
+                          {method.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 flex items-center gap-1 mb-1.5">
                       <Landmark className="w-3 h-3 text-slate-400" />
                       Conta Bancária
                     </label>
@@ -933,7 +1024,7 @@ export default function FinancialPage() {
                       onChange={(e) => setEditBankAccountId(e.target.value)}
                       className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shadow-sm"
                     >
-                      <option value="">Selecione a conta...</option>
+                      <option value="">Selecione...</option>
                       {bankAccounts.map((account) => (
                         <option key={account.id} value={account.id}>
                           {account.name}
