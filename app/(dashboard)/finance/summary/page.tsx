@@ -1,11 +1,13 @@
 "use client"
 
 import * as React from "react"
+import { useState, useEffect } from "react"
+import api from "@/lib/api"
 import { 
   ArrowDown, 
   ArrowUp, 
   HelpCircle,
-  TrendingUp
+  Loader2
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -27,25 +29,41 @@ import {
   Legend
 } from "recharts"
 
-// --- DADOS MOCKADOS PARA O GRÁFICO ---
-const chartData = [
-  { name: "31/05 a 06/06", recebimentos: 0, pagamentos: 0 },
-  { name: "07/06 a 13/06", recebimentos: 0, pagamentos: 0 },
-  { name: "14/06 a 20/06", recebimentos: 300, pagamentos: 0 },
-  { name: "21/06 a 27/06", recebimentos: 0, pagamentos: 0 },
-  { name: "28/06 a 04/07", recebimentos: 0, pagamentos: 0 },
-  { name: "05/07 a 11/07", recebimentos: 0, pagamentos: 0 },
-  { name: "12/07 a 18/07", recebimentos: 0, pagamentos: 0 },
-  { name: "19/07 a 25/07", recebimentos: 0, pagamentos: 0 },
-  { name: "26/07 a 01/08", recebimentos: 0, pagamentos: 0 },
-  { name: "02/08 a 08/08", recebimentos: 0, pagamentos: 0 },
-  { name: "09/08 a 15/08", recebimentos: 0, pagamentos: 0 },
-  { name: "16/08 a 22/08", recebimentos: 0, pagamentos: 0 },
-  { name: "23/08 a 29/08", recebimentos: 0, pagamentos: 0 },
-]
-
 export default function FinancialSummaryPage() {
-  const currentMonthYear = "Julho/2026"
+  const [summaryData, setSummaryData] = useState<any>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Busca os dados do nosso novo endpoint BFF
+  useEffect(() => {
+    async function loadFinancialSummary() {
+      try {
+        const response = await api.get('/financial/summary')
+        setSummaryData(response.data)
+      } catch (error) {
+        console.error("Erro ao carregar resumo financeiro:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadFinancialSummary()
+  }, [])
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[70vh] text-slate-400">
+        <Loader2 className="w-10 h-10 animate-spin mb-4" />
+        <p className="font-medium animate-pulse">Carregando métricas financeiras...</p>
+      </div>
+    )
+  }
+
+  // Fallback caso venha vazio
+  const currentMonthYear = summaryData?.currentMonthYear || "Julho/2026"
+  const payables = summaryData?.payables || { total: 0, overdue: 0, today: 0, thisWeek: 0 }
+  const receivables = summaryData?.receivables || { total: 0, overdue: 0, today: 0, thisWeek: 0 }
+  const availabilities = summaryData?.availabilities || { totalBalance: 0, accounts: [] }
+  const chartData = summaryData?.chartData || []
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto p-4 lg:p-8 bg-slate-50 min-h-screen">
@@ -65,21 +83,29 @@ export default function FinancialSummaryPage() {
           <CardContent>
             <div className="mb-4">
               <span className="text-xs text-slate-400 font-semibold">{currentMonthYear}</span>
-              <p className="text-3xl font-black text-red-600">R$ 0,00</p>
+              <p className="text-3xl font-black text-red-600">
+                R$ {payables.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
             </div>
             
             <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-100">
               <div>
                 <p className="text-xs text-slate-500 mb-1">Em atraso</p>
-                <p className="text-sm font-semibold text-slate-800">R$ 0,00</p>
+                <p className="text-sm font-semibold text-slate-800">
+                  R$ {payables.overdue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 mb-1">Hoje</p>
-                <p className="text-sm font-semibold text-slate-800">R$ 0,00</p>
+                <p className="text-sm font-semibold text-slate-800">
+                  R$ {payables.today.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 mb-1">Esta semana</p>
-                <p className="text-sm font-semibold text-slate-800">R$ 0,00</p>
+                <p className="text-sm font-semibold text-slate-800">
+                  R$ {payables.thisWeek.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -95,27 +121,35 @@ export default function FinancialSummaryPage() {
           <CardContent>
             <div className="mb-4">
               <span className="text-xs text-slate-400 font-semibold">{currentMonthYear}</span>
-              <p className="text-3xl font-black text-green-500">R$ 0,00</p>
+              <p className="text-3xl font-black text-green-500">
+                R$ {receivables.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
             </div>
             
             <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-100">
               <div>
                 <p className="text-xs text-slate-500 mb-1">Em atraso</p>
-                <p className="text-sm font-semibold text-slate-800">R$ 0,00</p>
+                <p className="text-sm font-semibold text-slate-800">
+                  R$ {receivables.overdue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 mb-1">Hoje</p>
-                <p className="text-sm font-semibold text-slate-800">R$ 0,00</p>
+                <p className="text-sm font-semibold text-slate-800">
+                  R$ {receivables.today.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 mb-1">Esta semana</p>
-                <p className="text-sm font-semibold text-slate-800">R$ 0,00</p>
+                <p className="text-sm font-semibold text-slate-800">
+                  R$ {receivables.thisWeek.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* CARD 3: DISPONIBILIDADES */}
+        {/* CARD 3: DISPONIBILIDADES (Simplificado sem limite) */}
         <Card className="bg-white shadow-sm border-slate-200">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -125,18 +159,16 @@ export default function FinancialSummaryPage() {
           <CardContent>
             <div className="mb-4">
               <span className="text-xs text-slate-400 font-semibold">{currentMonthYear}</span>
-              <p className="text-3xl font-black text-green-500">R$ 33.739,05</p>
+              <p className="text-3xl font-black text-green-500">
+                R$ {availabilities.totalBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
             </div>
             
-            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
-              <div>
-                <p className="text-xs text-slate-500 mb-1">Limite</p>
-                <p className="text-sm font-semibold text-slate-800">R$ 2.000,00</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 mb-1">Saldo+Limite</p>
-                <p className="text-sm font-semibold text-slate-800">R$ 35.739,05</p>
-              </div>
+            <div className="pt-4 border-t border-slate-100">
+              <p className="text-xs text-slate-500 mb-1">Total em Contas Bancárias / Caixa</p>
+              <p className="text-sm font-semibold text-slate-800">
+                {availabilities.accounts.length} conta(s) ativa(s) mapeada(s)
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -148,7 +180,7 @@ export default function FinancialSummaryPage() {
           ======================================= */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         
-        {/* GRÁFICO: RESUMO POR SEMANA (Ocupa 2 colunas) */}
+        {/* GRÁFICO: RESUMO POR SEMANA */}
         <Card className="xl:col-span-2 bg-white shadow-sm border-slate-200">
           <CardHeader>
             <CardTitle className="text-lg font-bold text-slate-800">Resumo por semana</CardTitle>
@@ -189,16 +221,10 @@ export default function FinancialSummaryPage() {
           </CardContent>
         </Card>
 
-        {/* TABELA: SALDOS EM CONTA (Ocupa 1 coluna) */}
+        {/* TABELA: SALDOS EM CONTA DINÂMICA */}
         <Card className="bg-white shadow-sm border-slate-200">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-lg font-bold text-slate-800">Saldos em conta</CardTitle>
-            <div className="flex items-center gap-2">
-              <input type="checkbox" id="show-inactive" className="rounded border-slate-300" />
-              <label htmlFor="show-inactive" className="text-xs text-slate-500 cursor-pointer">
-                Exibir contas inativas
-              </label>
-            </div>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
@@ -206,25 +232,24 @@ export default function FinancialSummaryPage() {
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="font-bold text-slate-800 text-xs">Conta bancária</TableHead>
                   <TableHead className="font-bold text-slate-800 text-xs text-right">Saldo R$</TableHead>
-                  <TableHead className="font-bold text-slate-800 text-xs text-right">Limite R$</TableHead>
-                  <TableHead className="font-bold text-slate-800 text-xs text-right">Disponível R$</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                
-                <TableRow className="border-b border-slate-100">
-                  <TableCell className="font-medium text-slate-600 text-sm">Disponível em caixa</TableCell>
-                  <TableCell className="text-right text-green-500 font-semibold text-sm">6.000,00</TableCell>
-                  <TableCell className="text-right text-slate-600 font-semibold text-sm">0,00</TableCell>
-                  <TableCell className="text-right text-green-500 font-semibold text-sm">6.000,00</TableCell>
-                </TableRow>
-                
-                <TableRow className="border-b border-slate-100">
-                  <TableCell className="font-medium text-slate-600 text-sm">Brasil</TableCell>
-                  <TableCell className="text-right text-green-500 font-semibold text-sm">27.739,05</TableCell>
-                  <TableCell className="text-right text-slate-600 font-semibold text-sm">2.000,00</TableCell>
-                  <TableCell className="text-right text-green-500 font-semibold text-sm">29.739,05</TableCell>
-                </TableRow>
+                {availabilities.accounts.map((acc: any, index: number) => (
+                  <TableRow key={index} className="border-b border-slate-100">
+                    <TableCell className="font-medium text-slate-600 text-sm">{acc.name}</TableCell>
+                    <TableCell className="text-right text-green-500 font-semibold text-sm">
+                      {acc.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {availabilities.accounts.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={2} className="text-center text-slate-400 py-6 text-sm">
+                      Nenhuma conta cadastrada.
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </CardContent>
