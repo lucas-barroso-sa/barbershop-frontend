@@ -38,15 +38,20 @@ export default function LoginPage() {
         password: password
       })
 
-      const { token } = response.data
+      // Assumindo que a sua API retorna a role junto com o token
+      const { token, role, name } = response.data
 
+      // 1. Salva o token no Cookie (como você já fazia)
       setCookie(undefined, 'barbershop.token', token, {
         maxAge: 60 * 60 * 2,
         path: '/',
       })
 
+      // 2. Salva a role e o nome no localStorage para a interface (UX)
+      localStorage.setItem('@BarberShop:role', role)
+      if (name) localStorage.setItem('@BarberShop:name', name)
+
       router.push('/agenda')
-      
     } catch (err: any) {
       console.error("Erro na autenticação:", err)
       setError("Credenciais inválidas. Verifique seu e-mail e senha.")

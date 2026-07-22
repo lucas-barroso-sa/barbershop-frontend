@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Users, Scissors, Package, Landmark, CreditCard } from "lucide-react"
+import AdminGuard from "@/components/ui/AdminGuard"
 
 // Estrutura de dados separada por categorias
 const settingsSections = [
@@ -53,6 +54,7 @@ const settingsSections = [
 
 export default function SettingsPage() {
   return (
+    <AdminGuard>
     <div className="space-y-10 max-w-6xl mx-auto pb-10">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-slate-900">Configurações</h1>
@@ -96,5 +98,6 @@ export default function SettingsPage() {
         ))}
       </div>
     </div>
+    </AdminGuard>
   )
 }

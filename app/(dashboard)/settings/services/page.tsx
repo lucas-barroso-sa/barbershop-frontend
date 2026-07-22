@@ -15,6 +15,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Search, Plus, MoreVertical, ArrowLeft, Loader2 } from "lucide-react"
+import AdminGuard from "@/components/ui/AdminGuard"
 
 // Interface espelhando o seu ServicingDTO do Java
 // Se o seu DTO não tiver "category" ou "createdAt", não tem problema,
@@ -68,6 +69,7 @@ export default function ServicesPage() {
   }
 
   return (
+    <AdminGuard>
     <div className="space-y-6 max-w-7xl mx-auto pb-10">
       <div className="flex items-center gap-4 mb-8">
         <Link href="/settings">
@@ -163,5 +165,6 @@ export default function ServicesPage() {
         </CardContent>
       </Card>
     </div>
+    </AdminGuard>
   )
 }

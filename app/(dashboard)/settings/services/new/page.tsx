@@ -23,6 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import AdminGuard from "@/components/ui/AdminGuard"
 
 export default function NewServicePage() {
   const [name, setName] = useState("")
@@ -76,6 +77,7 @@ export default function NewServicePage() {
   }
 
   return (
+    <AdminGuard>
     <div className="max-w-2xl mx-auto space-y-6 pb-10">
       <div className="flex items-center gap-4">
         <Button 
@@ -186,5 +188,6 @@ export default function NewServicePage() {
         </Card>
       </form>
     </div>
+    </AdminGuard>
   )
 }

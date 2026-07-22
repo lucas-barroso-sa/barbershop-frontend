@@ -118,7 +118,7 @@ export default function RegisterPage() {
                 disabled={isLoading}
               >
                 <option value="ADMIN">Administrador / Dono</option>
-                <option value="USER">Barbeiro / Colaborador</option>
+                <option value="BARBER">Barbeiro / Colaborador</option>
               </select>
             </div>
           </CardContent>

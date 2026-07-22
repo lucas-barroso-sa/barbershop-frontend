@@ -36,6 +36,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import AdminGuard from "@/components/ui/AdminGuard"
 
 // 1. Interface para a Tabela
 interface FinancialMovementMinDTO {
@@ -76,6 +77,7 @@ interface PaymentMethodDTO {
 }
 
 export default function FinancialPage() {
+
   const [searchTerm, setSearchTerm] = useState("")
   const [activeTab, setActiveTab] = useState<"CAIXA" | "RECEBER" | "PAGAR">("CAIXA")
   
@@ -335,7 +337,7 @@ export default function FinancialPage() {
     }
   }
 
-  return (
+  return (<AdminGuard>
     <div className="space-y-8 max-w-7xl mx-auto p-4 lg:p-8">
       
       {/* CABEÇALHO */}
@@ -1066,5 +1068,6 @@ export default function FinancialPage() {
       )}
 
     </div>
+  </AdminGuard>
   )
 }

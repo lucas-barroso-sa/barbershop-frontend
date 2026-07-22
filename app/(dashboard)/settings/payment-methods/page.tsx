@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import AdminGuard from "@/components/ui/AdminGuard"
 
 // 1. Interfaces baseadas no Back-end
 interface BankAccountDTO {
@@ -165,6 +166,7 @@ export default function PaymentMethodsPage() {
   }
 
   return (
+    <AdminGuard>
     <div className="space-y-6 max-w-7xl mx-auto p-4 lg:p-8 bg-slate-50/50 min-h-screen relative">
       
       {/* CABEÇALHO */}
@@ -516,5 +518,6 @@ export default function PaymentMethodsPage() {
         </div>
       )}
     </div>
+    </AdminGuard>
   )
 }

@@ -28,11 +28,12 @@ import {
   ResponsiveContainer,
   Legend
 } from "recharts"
+import { useRouter } from "next/navigation"
+import AdminGuard from "@/components/ui/AdminGuard"
 
 export default function FinancialSummaryPage() {
   const [summaryData, setSummaryData] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
-
   // Busca os dados do nosso novo endpoint BFF
   useEffect(() => {
     async function loadFinancialSummary() {
@@ -66,6 +67,7 @@ export default function FinancialSummaryPage() {
   const chartData = summaryData?.chartData || []
 
   return (
+  <AdminGuard>
     <div className="space-y-6 max-w-[1600px] mx-auto p-4 lg:p-8 bg-slate-50 min-h-screen">
       
       {/* =======================================
@@ -257,5 +259,6 @@ export default function FinancialSummaryPage() {
 
       </div>
     </div>
+    </AdminGuard>
   )
 }

@@ -31,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import AdminGuard from "@/components/ui/AdminGuard"
 
 export default function UsersManagementPage() {
   const [users, setUsers] = useState<any[]>([])
@@ -153,6 +154,7 @@ export default function UsersManagementPage() {
 
   if (isLoading && users.length === 0) {
     return (
+      
       <div className="flex flex-col items-center justify-center min-h-[70vh] text-slate-400">
         <Loader2 className="w-10 h-10 animate-spin mb-4" />
         <p className="font-medium animate-pulse">Carregando equipe...</p>
@@ -160,7 +162,7 @@ export default function UsersManagementPage() {
     )
   }
 
-  return (
+  return (<AdminGuard>
     <div className="max-w-6xl mx-auto space-y-6 p-4 lg:p-8 bg-slate-50 min-h-screen relative">
       
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -508,5 +510,6 @@ export default function UsersManagementPage() {
       )}
 
     </div>
+    </AdminGuard>
   )
 }
