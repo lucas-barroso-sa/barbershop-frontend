@@ -1,9 +1,9 @@
 import Sidebar from "@/components/ui/Sidebar"
-import AuthGuard from "@/components/ui/AuthGuard"
+
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <AuthGuard>
+   
     <div className="min-h-screen bg-slate-50">
       {/* Aqui entra a nossa barra lateral retrátil */}
       <Sidebar />
@@ -15,6 +15,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </main>
     </div>
-    </AuthGuard>
+    
   )
 }
