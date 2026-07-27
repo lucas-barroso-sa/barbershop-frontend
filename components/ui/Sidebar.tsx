@@ -10,7 +10,8 @@ import {
   Settings, 
   Scissors,
   LogOut,
-  ChevronRight
+  ChevronRight,
+  BarChart3 // 🚨 Ícone adicionado para os Relatórios
 } from "lucide-react"
 
 export default function Sidebar() {
@@ -44,17 +45,27 @@ export default function Sidebar() {
       name: "Financeiro", 
       href: "/finance", 
       icon: DollarSign,
-      roles: ["ADMIN"], // 🚨 APENAS ADMIN
+      roles: ["ADMIN"], // APENAS ADMIN
       subItems: [
         { name: "Movimentações", href: "/finance" },
         { name: "Resumo", href: "/finance/summary" }
       ]
     },
     { 
+      name: "Relatórios", // 🚨 NOVO MÓDULO ADICIONADO
+      href: "/reports", 
+      icon: BarChart3, 
+      roles: ["ADMIN"], // APENAS ADMIN
+      subItems: [
+        { name: "Repasse", href: "/reports/commissions" },
+        { name: "Atendimento", href: "/reports/attendance" }
+      ]
+    },
+    { 
       name: "Configurações", 
       href: "/settings", 
       icon: Settings, 
-      roles: ["ADMIN"] // 🚨 APENAS ADMIN (Gerenciar equipe está aqui dentro)
+      roles: ["ADMIN"] // APENAS ADMIN
     },
   ]
 
