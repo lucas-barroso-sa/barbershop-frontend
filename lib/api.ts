@@ -14,6 +14,7 @@ api.interceptors.request.use((config) => {
   // -----------------------------
 
   const { 'barbershop.token': token } = parseCookies();
+  console.log(token)
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;

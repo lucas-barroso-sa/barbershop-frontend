@@ -167,9 +167,7 @@ export default function ClientDetailsPage({ params }: { params: Promise<{ id: st
           <button onClick={() => setActiveTab("historico")} className={`py-4 px-1 inline-flex items-center gap-2 border-b-2 font-semibold text-sm transition-colors ${activeTab === "historico" ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-700"}`}>
             <History className="w-4 h-4" /> Histórico
           </button>
-          <button onClick={() => setActiveTab("contas")} className={`py-4 px-1 inline-flex items-center gap-2 border-b-2 font-semibold text-sm transition-colors ${activeTab === "contas" ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-700"}`}>
-            <DollarSign className="w-4 h-4" /> Contas
-          </button>
+          
           <button onClick={() => setActiveTab("cadastro")} className={`py-4 px-1 inline-flex items-center gap-2 border-b-2 font-semibold text-sm transition-colors ${activeTab === "cadastro" ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-700"}`}>
             <Settings className="w-4 h-4" /> Cadastro
           </button>
@@ -233,18 +231,7 @@ export default function ClientDetailsPage({ params }: { params: Promise<{ id: st
             </div>
           )}
 
-        {/* ABA: CONTAS */}
-        {activeTab === "contas" && (
-            <div className="space-y-4">
-              <h2 className="text-lg font-bold text-slate-800">Histórico Financeiro</h2>
-              <Card className="border-dashed border-2 border-slate-200 bg-slate-50">
-                <CardContent className="flex flex-col items-center justify-center py-16 text-slate-400">
-                  <DollarSign className="w-12 h-12 mb-4 opacity-20" />
-                  <p className="font-medium text-slate-500">Módulo financeiro em construção.</p>
-                </CardContent>
-              </Card>
-            </div>
-          )}
+        
 
         {/* 🚨 ABA: CADASTRO COM EDIÇÃO HABILITADA */}
         {activeTab === "cadastro" && (
