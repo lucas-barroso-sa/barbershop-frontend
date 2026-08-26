@@ -2,7 +2,7 @@ import axios from 'axios';
 import { parseCookies, destroyCookie } from 'nookies';
 
 const api = axios.create({
-  baseURL: process.env.backend || 'http://localhost:8080',
+  baseURL: process.env.backend
 });
 
 // O "Porteiro": Interceptor de Requisição
