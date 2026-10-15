@@ -15,9 +15,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Search, UserPlus, Loader2, UserCircle } from "lucide-react"
+import { Search, UserPlus, Loader2, UserCircle, Phone } from "lucide-react"
 
-// 1. Interface atualizada: Sem o campo 'cpf'
 interface Client {
   id: number
   name: string
@@ -27,7 +26,11 @@ interface Client {
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
+  
+  // Estados para os filtros
   const [searchTerm, setSearchTerm] = useState("")
+  const [phoneSearch, setPhoneSearch] = useState("")
+  
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -45,11 +48,20 @@ export default function ClientsPage() {
     }
   }
 
-  // 2. Filtro seguro e focado apenas no nome
+  // Filtro combinado: Nome E Telefone
   const filteredClients = clients.filter(client => {
-    // Fallback: se o nome vier null do banco, tratamos como string vazia
     const safeName = client.name ?? ""
-    return safeName.toLowerCase().includes(searchTerm.toLowerCase())
+    const safePhone = client.phone ?? ""
+
+    // Verifica se o nome digitado bate com o nome do cliente
+    const matchesName = safeName.toLowerCase().includes(searchTerm.toLowerCase())
+    
+    // Remove parênteses e traços tanto da busca quanto do dado do banco para comparar apenas os números
+    const cleanPhoneSearch = phoneSearch.replace(/\D/g, "")
+    const cleanClientPhone = safePhone.replace(/\D/g, "")
+    const matchesPhone = cleanClientPhone.includes(cleanPhoneSearch)
+
+    return matchesName && matchesPhone
   })
 
   return (
@@ -72,17 +84,31 @@ export default function ClientsPage() {
       <Card className="shadow-sm border-none">
         <CardHeader className="pb-4">
           <CardTitle className="text-xl font-bold">Listagem de Clientes</CardTitle>
-          <div className="flex items-center gap-2 max-w-sm mt-4 relative">
-            <Search className="w-4 h-4 absolute left-3 text-slate-400" />
-            {/* 3. Placeholder atualizado */}
-            <Input 
-              placeholder="Buscar por nome..." 
-              className="pl-10 h-10 focus-visible:ring-slate-400" 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+          
+          {/* Inputs de Busca Lado a Lado */}
+          <div className="flex flex-col sm:flex-row items-center gap-4 mt-4 w-full max-w-2xl">
+            <div className="relative w-full">
+              <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+              <Input 
+                placeholder="Buscar por nome..." 
+                className="pl-10 h-10 focus-visible:ring-slate-400 bg-slate-50" 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            
+            <div className="relative w-full">
+              <Phone className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+              <Input 
+                placeholder="Buscar por telefone..." 
+                className="pl-10 h-10 focus-visible:ring-slate-400 bg-slate-50" 
+                value={phoneSearch}
+                onChange={(e) => setPhoneSearch(e.target.value)}
+              />
+            </div>
           </div>
         </CardHeader>
+        
         <CardContent>
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-400">
@@ -95,7 +121,6 @@ export default function ClientsPage() {
               <TableHeader className="bg-slate-50">
                 <TableRow>
                   <TableHead className="w-[300px] font-bold text-slate-900">Nome</TableHead>
-                  {/* 4. Coluna de CPF removida do Header */}
                   <TableHead className="font-bold text-slate-900">Telefone</TableHead>
                   <TableHead className="font-bold text-slate-900">E-mail</TableHead>
                   <TableHead className="text-right font-bold text-slate-900">Ações</TableHead>
@@ -111,9 +136,8 @@ export default function ClientsPage() {
                         </div>
                         {client.name}
                       </TableCell>
-                      {/* 5. Célula de CPF removida do Body */}
-                      <TableCell className="text-slate-600">{client.phone}</TableCell>
-                      <TableCell className="text-slate-600">{client.email}</TableCell>
+                      <TableCell className="text-slate-600">{client.phone || "-"}</TableCell>
+                      <TableCell className="text-slate-600">{client.email || "-"}</TableCell>
                       <TableCell className="text-right">
                         <Button asChild variant="outline" size="sm" className="hover:bg-slate-900 hover:text-white transition-colors font-bold">
                           <Link href={`/clients/${client.id}`}>
@@ -125,7 +149,6 @@ export default function ClientsPage() {
                   ))
                 ) : (
                   <TableRow>
-                    {/* 6. colSpan ajustado de 5 para 4, já que temos uma coluna a menos */}
                     <TableCell colSpan={4} className="text-center py-10 text-slate-400">
                       Nenhum cliente encontrado com esses termos.
                     </TableCell>

@@ -10,7 +10,8 @@ import {
   ArrowLeft, 
   Loader2, 
   User,
-  CheckCircle2
+  CheckCircle2,
+  AlertCircle // 🚨 Ícone importado para o aviso de erro
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,18 +31,49 @@ export default function NewClientPage() {
   const [email, setEmail] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
+  
+  // 🚨 Estado para gerir erros de formulário e da API
+  const [clientFormError, setClientFormError] = useState<string | null>(null)
 
   const router = useRouter()
 
+  // Função para aplicar a máscara no input do telefone
+  const formatPhoneMask = (value: string) => {
+    const numbers = value.replace(/\D/g, "")
+    if (numbers.length <= 10) {
+      return numbers.replace(/(\d{2})(\d{4})(\d{0,4})/, "($1) $2-$3").replace(/-$/, "")
+    } else {
+      return numbers.replace(/(\d{2})(\d{5})(\d{0,4})/, "($1) $2-$3").replace(/-$/, "").slice(0, 15)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // Limpa mensagens de erro antigas
+    setClientFormError(null)
+
+    // 🚨 1. Limpa a máscara (Pega só os números)
+    const digitsOnly = phone.replace(/\D/g, "")
+    
+    // 🚨 2. Valida ANTES de chamar o back-end
+    if (digitsOnly.length !== 10 && digitsOnly.length !== 11) {
+      setClientFormError("O telefone deve conter o DDD e ter 10 ou 11 dígitos.")
+      return
+    }
+
+    if (digitsOnly.length === 11 && digitsOnly[2] !== '9') {
+      setClientFormError("Atenção: Celulares devem iniciar com o dígito 9 após o DDD.")
+      return
+    }
+
     setIsLoading(true)
 
     try {
-      // Ajuste os campos conforme o seu ClientDTO no Java
+      // 🚨 3. Envia APENAS os números (digitsOnly)
       await api.post('/clients', {
         name,
-        phone,
+        phone: digitsOnly,
         email
       })
 
@@ -52,9 +84,21 @@ export default function NewClientPage() {
         router.push('/clients')
       }, 2000)
 
-    } catch (error) {
-      console.error("Erro ao cadastrar cliente:", error)
-      alert("Erro ao cadastrar cliente. Verifique os dados.")
+    } catch (error: any) {
+      console.error("Detalhes completos do erro:", error.response);
+      
+      const status = error.response?.status;
+      const errorDataString = JSON.stringify(error.response?.data || "").toLowerCase();
+
+      // 🚨 4. Procura ativamente pelas palavras de erro ou pelo status 400
+      if (errorDataString.includes("exist") || errorDataString.includes("already")) {
+        setClientFormError("Já existe um cliente registado com este número de telefone.");
+      } else if (status === 400) {
+        const backendMessage = error.response?.data?.message || error.response?.data?.detail;
+        setClientFormError(backendMessage ? backendMessage : "Dados inválidos. Verifique os campos e tente novamente.");
+      } else {
+        setClientFormError("Erro ao registar cliente. Verifique se os dados estão corretos.");
+      }
     } finally {
       setIsLoading(false)
     }
@@ -106,6 +150,15 @@ export default function NewClientPage() {
           </CardHeader>
           
           <CardContent className="space-y-6 pt-6">
+            
+            {/* 🚨 CAIXA DE ERRO NA INTERFACE */}
+            {clientFormError && (
+              <div className="bg-red-50 text-red-600 px-4 py-3 rounded-md text-sm font-medium flex items-start gap-2 border border-red-100 animate-in fade-in slide-in-from-top-2">
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                <p>{clientFormError}</p>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="name" className="text-base font-semibold">Nome Completo</Label>
               <div className="relative">
@@ -133,7 +186,8 @@ export default function NewClientPage() {
                     className="pl-10 h-11"
                     required 
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    // 🚨 Aplica a máscara enquanto digita
+                    onChange={(e) => setPhone(formatPhoneMask(e.target.value))}
                     disabled={isLoading}
                   />
                 </div>

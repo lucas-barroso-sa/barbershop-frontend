@@ -14,9 +14,10 @@ import {
   Search,
   DollarSign,
   X,
-  UserPlus, // Importados para o Modal
-  Phone,    // Importados para o Modal
-  Mail      // Importados para o Modal
+  UserPlus, 
+  Phone,    
+  Mail,
+  AlertCircle 
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -49,11 +50,21 @@ function SchedulingForm() {
   const [dbServices, setDbServices] = useState<any[]>([])
   const [isFetchingData, setIsFetchingData] = useState(true)
 
-  // Estados dos Autocompletes
-  const [clientSearch, setClientSearch] = useState("")
+  // ==========================================
+  // ESTADOS DE BUSCA DE CLIENTE
+  // ==========================================
   const [selectedClient, setSelectedClient] = useState<any>(null)
-  const [isClientOpen, setIsClientOpen] = useState(false)
+  
+  // Busca Local por Nome
+  const [nameSearch, setNameSearch] = useState("")
+  const [isNameOpen, setIsNameOpen] = useState(false)
+  
+  // Busca API por Telefone
+  const [phoneSearch, setPhoneSearch] = useState("")
+  const [isPhoneOpen, setIsPhoneOpen] = useState(false)
+  const [apiPhoneClients, setApiPhoneClients] = useState<any[]>([])
 
+  // Outros estados
   const [barberSearch, setBarberSearch] = useState("")
   const [selectedBarber, setSelectedBarber] = useState<any>(null)
   const [isBarberOpen, setIsBarberOpen] = useState(false)
@@ -61,12 +72,17 @@ function SchedulingForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
 
-  // 🚨 Estados do Modal de Novo Cliente
+  // ==========================================
+  // ESTADOS DO MODAL DE NOVO CLIENTE
+  // ==========================================
   const [isClientModalOpen, setIsClientModalOpen] = useState(false)
   const [newClientName, setNewClientName] = useState("")
   const [newClientPhone, setNewClientPhone] = useState("")
   const [newClientEmail, setNewClientEmail] = useState("")
   const [isCreatingClient, setIsCreatingClient] = useState(false)
+  
+  // ESTADO: Armazena o erro para exibir na interface
+  const [clientFormError, setClientFormError] = useState<string | null>(null)
 
   useEffect(() => {
     async function loadFormData() {
@@ -89,6 +105,34 @@ function SchedulingForm() {
     loadFormData()
   }, [])
 
+  // EFEITO: Busca cliente por telefone na API limitando a 5 resultados
+  useEffect(() => {
+    if (phoneSearch.trim().length >= 3) {
+      const delayDebounceFn = setTimeout(async () => {
+        try {
+          const cleanPhone = encodeURIComponent(phoneSearch.trim())
+          const response = await api.get(`/clients/phone/${cleanPhone}?size=5&page=0`)
+          
+          const clientesEncontrados = response.data.content || response.data || []
+          setApiPhoneClients(Array.isArray(clientesEncontrados) ? clientesEncontrados : [])
+          setIsPhoneOpen(true)
+        } catch (error) {
+          console.error("Erro na busca por telefone:", error)
+        }
+      }, 500)
+
+      return () => clearTimeout(delayDebounceFn)
+    } else {
+      setApiPhoneClients([])
+      setIsPhoneOpen(false)
+    }
+  }, [phoneSearch])
+
+  // Filtro local para o campo de Nome
+  const filteredByName = dbClients.filter(c => 
+    (c.name || "").toLowerCase().includes(nameSearch.toLowerCase())
+  )
+
   useEffect(() => {
     const sum = selectedServiceIds.reduce((acc, id) => {
       const srv = dbServices.find(s => s.id === id)
@@ -107,16 +151,11 @@ function SchedulingForm() {
   const handleRemoveService = (idToRemove: number) => {
     setSelectedServiceIds(selectedServiceIds.filter(id => id !== idToRemove))
   }
-
-  const filteredClients = dbClients.filter(c => 
-    (c.name || "").toLowerCase().includes(clientSearch.toLowerCase())
-  )
   
   const filteredBarbers = dbBarbers.filter(b => 
     (b.name || "").toLowerCase().includes(barberSearch.toLowerCase())
   )
 
-  // Submissão do Agendamento Principal
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -130,7 +169,7 @@ function SchedulingForm() {
     try {
       const payload = {
         clientId: selectedClient.id,
-        userId: selectedBarber.id,           
+        userId: selectedBarber.id,          
         servicingIds: selectedServiceIds, 
         appointmentTime: `${date}T${time}:00`,
         scheduleValue: parseFloat(scheduleValue)
@@ -148,10 +187,40 @@ function SchedulingForm() {
     }
   }
 
-  // 🚨 Função para Criar o Novo Cliente via Modal
+  // Função para aplicar a máscara no input do telefone
+  const formatPhoneMask = (value: string) => {
+    const numbers = value.replace(/\D/g, "")
+    if (numbers.length <= 10) {
+      return numbers.replace(/(\d{2})(\d{4})(\d{0,4})/, "($1) $2-$3").replace(/-$/, "")
+    } else {
+      return numbers.replace(/(\d{2})(\d{5})(\d{0,4})/, "($1) $2-$3").replace(/-$/, "").slice(0, 15)
+    }
+  }
+
+  // Função para fechar o modal e limpar os erros
+  const handleCloseModal = () => {
+    setIsClientModalOpen(false)
+    setClientFormError(null)
+  }
+
   const handleCreateClient = async () => {
+    // Limpa qualquer erro anterior ao tentar enviar novamente
+    setClientFormError(null)
+
     if (!newClientName || !newClientPhone) {
-      alert("Nome e telefone são obrigatórios para cadastrar o cliente.")
+      setClientFormError("Nome e telefone são obrigatórios para cadastrar o cliente.")
+      return
+    }
+
+    const digitsOnly = newClientPhone.replace(/\D/g, "")
+    
+    if (digitsOnly.length !== 10 && digitsOnly.length !== 11) {
+      setClientFormError("O telefone deve conter o DDD e ter 10 ou 11 dígitos.")
+      return
+    }
+
+    if (digitsOnly.length === 11 && digitsOnly[2] !== '9') {
+      setClientFormError("Atenção: Celulares devem iniciar com o dígito 9 após o DDD.")
       return
     }
 
@@ -160,25 +229,39 @@ function SchedulingForm() {
     try {
       const response = await api.post('/clients', {
         name: newClientName,
-        phone: newClientPhone,
+        phone: digitsOnly, 
         email: newClientEmail
       })
 
       const createdClient = response.data
 
-      // Atualiza a lista, seleciona o cliente criado e limpa o modal
       setDbClients(prev => [...prev, createdClient])
       setSelectedClient(createdClient)
-      setClientSearch(createdClient.name)
       
-      setIsClientModalOpen(false)
+      // Sucesso: fecha o modal e limpa os campos
+      handleCloseModal()
       setNewClientName("")
       setNewClientPhone("")
       setNewClientEmail("")
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao cadastrar cliente:", error)
-      alert("Erro ao cadastrar cliente. Verifique os dados.")
+      
+      // 🚨 NOVO TRATAMENTO DE ERRO COM TRADUÇÃO EXPLICÍTA
+      const backendMessage = error.response?.data?.message || error.response?.data?.detail || error.response?.data || "";
+      const status = error.response?.status;
+
+      // Se a mensagem vinda do Java contiver a palavra "exist" ou se for um erro 400 previsível
+      if (backendMessage.toString().toLowerCase().includes("exist") || status === 400) {
+        setClientFormError("Já existe um cliente cadastrado com este número de telefone.");
+      } else {
+        // Fallback para outras mensagens do back-end ou o erro genérico
+        setClientFormError(
+          typeof backendMessage === 'string' && backendMessage.length > 0 
+            ? backendMessage 
+            : "Erro ao cadastrar cliente. Verifique se os dados estão corretos."
+        );
+      }
     } finally {
       setIsCreatingClient(false)
     }
@@ -219,70 +302,134 @@ function SchedulingForm() {
           
           <CardContent className="space-y-8 pt-6">
             
-            {/* --- BLOCO 1: CLIENTE E PROFISSIONAL --- */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
-              {/* Campo Cliente */}
-              <div className="space-y-2 relative">
-                {/* 🚨 Aqui está a alteração (Label + Botão de Modal) */}
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-bold text-slate-700">Buscar Cliente</Label>
+            {/* ========================================== */}
+            {/* BLOCO 1: SELEÇÃO DE CLIENTE                */}
+            {/* ========================================== */}
+            <div className="space-y-4 bg-slate-50 p-4 rounded-lg border border-slate-100">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-bold text-slate-700">Dados do Cliente</Label>
+                {!selectedClient && (
                   <button 
                     type="button" 
                     onClick={() => setIsClientModalOpen(true)}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-all"
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-all"
                   >
-                    + Novo Cliente
+                    <UserPlus className="w-3 h-3" /> Novo Cliente
                   </button>
-                </div>
-
-                <div className="relative">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                  <Input 
-                    placeholder="Nome do cliente..." 
-                    className="pl-10 h-12 focus-visible:ring-slate-900"
-                    value={selectedClient ? selectedClient.name : clientSearch}
-                    onChange={(e) => {
-                      setClientSearch(e.target.value)
-                      setSelectedClient(null)
-                      setIsClientOpen(true)
-                    }}
-                    onFocus={() => setIsClientOpen(true)}
-                    onBlur={() => setTimeout(() => setIsClientOpen(false), 200)}
-                  />
-                </div>
-                {isClientOpen && clientSearch && !selectedClient && (
-                  <ul className="absolute z-10 w-full bg-white border border-slate-200 shadow-xl rounded-md mt-1 max-h-48 overflow-auto">
-                    {filteredClients.map(client => (
-                      <li 
-                        key={client.id}
-                        onMouseDown={(e) => {
-                          e.preventDefault()
-                          setSelectedClient(client)
-                          setClientSearch("")
-                          setIsClientOpen(false)
-                        }}
-                        className="p-3 hover:bg-slate-100 cursor-pointer text-sm font-medium text-slate-700 border-b last:border-0"
-                      >
-                        {client.name}
-                      </li>
-                    ))}
-                    {filteredClients.length === 0 && (
-                      <li className="p-3 text-sm text-slate-500 text-center">
-                        Nenhum cliente encontrado.
-                      </li>
-                    )}
-                  </ul>
                 )}
               </div>
 
-              {/* Campo Barbeiro */}
-              <div className="space-y-2 relative">
-                <Label className="text-sm font-bold text-slate-700">Selecionar Profissional</Label>
+              {selectedClient ? (
+                <div className="flex items-center justify-between p-4 bg-white border border-blue-200 rounded-md shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-blue-100 text-blue-600 p-2 rounded-full">
+                      <User className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-800">{selectedClient.name}</p>
+                      <p className="text-sm text-slate-500 flex items-center gap-1">
+                        <Phone className="w-3 h-3" /> {selectedClient.phone || "Sem telefone"}
+                      </p>
+                    </div>
+                  </div>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      setSelectedClient(null)
+                      setNameSearch("")
+                      setPhoneSearch("")
+                    }}
+                  >
+                    Trocar
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                    <Input 
+                      placeholder="Buscar por Nome..." 
+                      className="pl-10 h-12 bg-white"
+                      value={nameSearch}
+                      onChange={(e) => {
+                        setNameSearch(e.target.value)
+                        setIsNameOpen(true)
+                      }}
+                      onFocus={() => setIsNameOpen(true)}
+                      onBlur={() => setTimeout(() => setIsNameOpen(false), 200)}
+                    />
+                    {isNameOpen && nameSearch && (
+                      <ul className="absolute z-10 w-full bg-white border border-slate-200 shadow-xl rounded-md mt-1 max-h-48 overflow-auto">
+                        {filteredByName.map(client => (
+                          <li 
+                            key={client.id}
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              setSelectedClient(client)
+                              setIsNameOpen(false)
+                            }}
+                            className="p-3 hover:bg-slate-100 cursor-pointer text-sm font-medium text-slate-700 border-b last:border-0 flex justify-between items-center"
+                          >
+                            <span>{client.name}</span>
+                            <span className="text-xs text-slate-400">{client.phone}</span>
+                          </li>
+                        ))}
+                        {filteredByName.length === 0 && (
+                          <li className="p-3 text-sm text-slate-500 text-center">Nenhum cliente com este nome.</li>
+                        )}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                    <Input 
+                      placeholder="Buscar por Telefone..." 
+                      className="pl-10 h-12 bg-white"
+                      value={phoneSearch}
+                      onChange={(e) => setPhoneSearch(e.target.value)}
+                      onFocus={() => setIsPhoneOpen(true)}
+                      onBlur={() => setTimeout(() => setIsPhoneOpen(false), 200)}
+                    />
+                    {isPhoneOpen && phoneSearch.length >= 3 && (
+                      <ul className="absolute z-10 w-full bg-white border border-slate-200 shadow-xl rounded-md mt-1 max-h-48 overflow-auto">
+                        {apiPhoneClients.map(client => (
+                          <li 
+                            key={client.id}
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              setSelectedClient(client)
+                              setIsPhoneOpen(false)
+                            }}
+                            className="p-3 hover:bg-slate-100 cursor-pointer text-sm font-medium text-slate-700 border-b last:border-0 flex flex-col"
+                          >
+                            <span className="font-bold">{client.phone}</span>
+                            <span className="text-xs text-slate-500">{client.name}</span>
+                          </li>
+                        ))}
+                        {apiPhoneClients.length === 0 && (
+                          <li className="p-3 text-sm text-slate-500 text-center">Nenhum cliente com este telefone.</li>
+                        )}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ========================================== */}
+            {/* BLOCO 2: PROFISSIONAL, DATA E HORA           */}
+            {/* ========================================== */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+              
+              <div className="space-y-2 relative md:col-span-1">
+                <Label className="text-sm font-bold text-slate-700">Profissional</Label>
                 <div className="relative">
                   <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <Input 
-                    placeholder="Nome do profissional..." 
+                    placeholder="Nome..." 
                     className="pl-10 h-12 focus-visible:ring-slate-900"
                     value={selectedBarber ? selectedBarber.name : barberSearch}
                     onChange={(e) => {
@@ -313,11 +460,8 @@ function SchedulingForm() {
                   </ul>
                 )}
               </div>
-            </div>
 
-            {/* --- BLOCO 2: DATA E HORA --- */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-100">
-              <div className="space-y-2">
+              <div className="space-y-2 md:col-span-1">
                 <Label className="text-sm font-bold text-slate-700">Data</Label>
                 <Input 
                   type="date" 
@@ -328,7 +472,7 @@ function SchedulingForm() {
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 md:col-span-1">
                 <Label className="text-sm font-bold text-slate-700">Horário</Label>
                 <Input 
                   type="time" 
@@ -340,7 +484,9 @@ function SchedulingForm() {
               </div>
             </div>
 
-            {/* --- BLOCO 3: SESSÃO FINANCEIRA --- */}
+            {/* ========================================== */}
+            {/* BLOCO 3: SESSÃO FINANCEIRA E SERVIÇOS      */}
+            {/* ========================================== */}
             <div className="pt-6 border-t border-slate-100">
               <h3 className="text-lg font-bold flex items-center gap-2 text-slate-800 mb-6">
                 <DollarSign className="w-5 h-5 text-green-600" />
@@ -426,7 +572,7 @@ function SchedulingForm() {
         </Card>
       </form>
 
-      {/* 🚨 MODAL DE NOVO CLIENTE (Fora da tag form principal) */}
+      {/* MODAL DE NOVO CLIENTE */}
       {isClientModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <Card className="w-full max-w-md shadow-2xl border-none animate-in fade-in zoom-in duration-200">
@@ -440,7 +586,7 @@ function SchedulingForm() {
                 </CardDescription>
               </div>
               <button 
-                onClick={() => setIsClientModalOpen(false)}
+                onClick={handleCloseModal}
                 className="text-slate-400 hover:text-white transition-colors"
               >
                 <X className="w-5 h-5" />
@@ -448,6 +594,15 @@ function SchedulingForm() {
             </CardHeader>
 
             <CardContent className="space-y-4 pt-6">
+              
+              {/* CAIXA DE ERRO NA INTERFACE */}
+              {clientFormError && (
+                <div className="bg-red-50 text-red-600 px-4 py-3 rounded-md text-sm font-medium flex items-start gap-2 border border-red-100 animate-in fade-in slide-in-from-top-2">
+                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                  <p>{clientFormError}</p>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="name" className="text-sm font-semibold">Nome Completo</Label>
                 <div className="relative">
@@ -472,7 +627,7 @@ function SchedulingForm() {
                     placeholder="(85) 99999-9999" 
                     className="pl-10 h-11"
                     value={newClientPhone}
-                    onChange={(e) => setNewClientPhone(e.target.value)}
+                    onChange={(e) => setNewClientPhone(formatPhoneMask(e.target.value))}
                     disabled={isCreatingClient}
                   />
                 </div>
@@ -499,7 +654,7 @@ function SchedulingForm() {
               <Button 
                 type="button" 
                 variant="ghost" 
-                onClick={() => setIsClientModalOpen(false)}
+                onClick={handleCloseModal}
                 disabled={isCreatingClient}
               >
                 Cancelar
