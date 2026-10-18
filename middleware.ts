@@ -7,15 +7,21 @@ export default function middleware(request: NextRequest) {
   const token = request.cookies.get('barbershop.token')?.value
   
   // 2. Verifica se a rota atual é pública
-  const isPublicRoute = request.nextUrl.pathname === '/' || request.nextUrl.pathname === '/register'
+const isPublicRoute = [
+  "/",
+  "/register",
+  "/change-password",
+  "/redifine-password",
+].includes(request.nextUrl.pathname)
 
   // 3. Se NÃO TEM token e a rota NÃO é pública -> Manda para o Login
   if (!token && !isPublicRoute) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 
+
   // 4. Se TEM token e tenta acessar Login/Register -> Manda para a Agenda
-  if (token && isPublicRoute) {
+  if (token && (request.nextUrl.pathname === '/' || request.nextUrl.pathname === '/register')) {
     return NextResponse.redirect(new URL('/agenda', request.url))
   }
 

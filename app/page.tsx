@@ -113,6 +113,7 @@ export default function LoginPage() {
                 />
               </div>
             </div>
+            
           </CardContent>
 
           <CardFooter className="flex flex-col space-y-6">
@@ -130,6 +131,12 @@ export default function LoginPage() {
                 "Entrar no Painel"
               )}
             </Button>
+
+            <div className="text-right">
+              <Link href="/change-password" className="text-sm font-semibold text-primary hover:underline underline-offset-4">
+                Alterar senha
+              </Link>
+            </div>
 
             <div className="text-sm text-center text-slate-500">
               Ainda não possui acesso?{" "}

@@ -5,36 +5,52 @@ import { useRouter, usePathname } from "next/navigation"
 import { parseCookies } from "nookies"
 import { Loader2 } from "lucide-react"
 
-export default function AuthGuard({ children }: { children: React.ReactNode }) {
+const publicRoutes = [
+  "/",
+  "/register",
+  "/change-password",
+  "/redifine-password",
+]
+
+export default function AuthGuard({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   const router = useRouter()
   const pathname = usePathname()
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [authorizedPath, setAuthorizedPath] = useState<string | null>(null)
+
+  const isPublicRoute = publicRoutes.includes(pathname)
 
   useEffect(() => {
-    // 1. Pega os cookies salvos no navegador
-    const cookies = parseCookies()
-    const token = cookies['barbershop.token']
-    
-    // 2. Identifica se o usuário está na tela de Login ou Registro
-    const isPublicRoute = pathname === '/' || pathname === '/register'
+    const token = parseCookies()["barbershop.token"]
 
-    if (!token && !isPublicRoute) {
-      // Sem token tentando acessar área interna -> Expulsa pro Login
-      router.replace('/')
-    } else if (token && isPublicRoute) {
-      // Com token tentando acessar o Login -> Joga de volta pra Agenda
-      router.replace('/agenda')
-    } else {
-      // Tudo certo, libera a tela!
-      setIsAuthenticated(true)
+    if (isPublicRoute) {
+      return
     }
-  }, [router, pathname])
 
-  // Enquanto valida, mostra um loading (evita que a tela pisque dados sensíveis)
-  if (!isAuthenticated) {
+    if (!token) {
+      router.replace("/")
+      return
+    }
+
+    setAuthorizedPath(pathname)
+  }, [pathname, isPublicRoute, router])
+
+  // Login, cadastro e recuperação de senha não exigem autenticação.
+  if (isPublicRoute) {
+    return <>{children}</>
+  }
+
+  // Só libera a página protegida após conferir a sessão.
+  if (authorizedPath !== pathname) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-slate-50">
-        <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <Loader2
+          className="h-10 w-10 animate-spin text-slate-700"
+          aria-label="Verificando sessão"
+        />
       </div>
     )
   }
