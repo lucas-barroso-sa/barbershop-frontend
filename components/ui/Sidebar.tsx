@@ -52,16 +52,6 @@ export default function Sidebar() {
       ]
     },
     { 
-      name: "Relatórios", // 🚨 NOVO MÓDULO ADICIONADO
-      href: "/reports", 
-      icon: BarChart3, 
-      roles: ["ADMIN"], // APENAS ADMIN
-      subItems: [
-        { name: "Repasse", href: "/reports/commissions" },
-        { name: "Atendimento", href: "/reports/attendance" }
-      ]
-    },
-    { 
       name: "Configurações", 
       href: "/settings", 
       icon: Settings, 
